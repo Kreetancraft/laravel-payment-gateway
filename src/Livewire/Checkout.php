@@ -417,6 +417,11 @@ class Checkout extends Component
 
     public function render(): View
     {
-        return view('payment-gateway::livewire.checkout');
+        return view('payment-gateway::livewire.checkout', [
+            'finalAmountCents' => $this->finalAmountCents,
+            'formattedAmount' => $this->formattedAmount,
+            'formattedDiscount' => $this->formattedDiscount,
+            'enabledGateways' => $this->enabledGateways,
+        ]);
     }
 }
