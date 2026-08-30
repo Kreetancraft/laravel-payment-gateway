@@ -1,0 +1,70 @@
+{
+    "name": "kreetancraft/laravel-payment-gateway",
+    "description": "Unified payment gateway for Laravel with Stripe and Himalayan Bank (2C2P PACO) support. Features API + web routes, smart gateway selection, Flux UI, refunds, webhooks, and redirects.",
+    "keywords": [
+        "laravel",
+        "payment",
+        "gateway",
+        "stripe",
+        "himalayan-bank",
+        "2c2p",
+        "paco",
+        "livewire",
+        "flux"
+    ],
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "KreetanCraft",
+            "email": "info@kreetancraft.com"
+        }
+    ],
+    "require": {
+        "php": "^8.2",
+        "laravel/framework": "^12.0|^13.0",
+        "livewire/livewire": "^4.0",
+        "livewire/flux": "^2.0",
+        "spatie/laravel-settings": "^3.0",
+        "spatie/laravel-data": "^4.0",
+        "spatie/laravel-permission": "^6.0",
+        "lorisleiva/laravel-actions": "^2.0",
+        "sandermuller/laravel-fluent-validation": "^1.30",
+        "spatie/laravel-query-builder": "^7.0",
+        "stripe/stripe-php": "^14.0",
+        "web-token/jwt-framework": "^4.0",
+        "guzzlehttp/guzzle": "^7.0",
+        "nesbot/carbon": "^3.0"
+    },
+    "require-dev": {
+        "orchestra/testbench": "^10.0",
+        "pestphp/pest": "^4.0",
+        "pestphp/pest-plugin-laravel": "^4.0",
+        "laravel/pint": "^1.20",
+        "fakerphp/faker": "^1.24"
+    },
+    "autoload": {
+        "psr-4": {
+            "Kreetancraft\\PaymentGateway\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Kreetancraft\\PaymentGateway\\Tests\\": "tests/"
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Kreetancraft\\PaymentGateway\\PaymentGatewayServiceProvider"
+            ]
+        }
+    },
+    "config": {
+        "sort-packages": true,
+        "allow-plugins": {
+            "pestphp/pest-plugin": true
+        }
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}
