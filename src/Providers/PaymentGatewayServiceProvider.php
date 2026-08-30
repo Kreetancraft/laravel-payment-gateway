@@ -15,8 +15,13 @@ use Kreetancraft\PaymentGateway\Contracts\GatewayResolver;
 use Kreetancraft\PaymentGateway\Contracts\PaymentGateway;
 use Kreetancraft\PaymentGateway\Facades\PaymentGateway as PaymentGatewayFacade;
 use Kreetancraft\PaymentGateway\Livewire\Checkout;
+use Kreetancraft\PaymentGateway\Livewire\CreateCoupon;
+use Kreetancraft\PaymentGateway\Livewire\EditCoupon;
+use Kreetancraft\PaymentGateway\Livewire\EditGateway;
 use Kreetancraft\PaymentGateway\Livewire\ManageCoupons;
 use Kreetancraft\PaymentGateway\Livewire\ManageGateways;
+use Kreetancraft\PaymentGateway\Livewire\ManageTransactions;
+use Kreetancraft\PaymentGateway\Livewire\ShowCoupon;
 use Kreetancraft\PaymentGateway\Models\Coupon;
 use Kreetancraft\PaymentGateway\Models\Gateway;
 use Kreetancraft\PaymentGateway\Models\Payment;
@@ -120,7 +125,12 @@ class PaymentGatewayServiceProvider extends ServiceProvider
     protected function registerLivewire(): void
     {
         Livewire::component('payment.gateways', ManageGateways::class);
+        Livewire::component('payment.gateways.edit', EditGateway::class);
         Livewire::component('payment.coupons', ManageCoupons::class);
+        Livewire::component('payment.coupons.create', CreateCoupon::class);
+        Livewire::component('payment.coupons.edit', EditCoupon::class);
+        Livewire::component('payment.coupons.show', ShowCoupon::class);
+        Livewire::component('payment.transactions', ManageTransactions::class);
         Livewire::component('payment.checkout', Checkout::class);
     }
 

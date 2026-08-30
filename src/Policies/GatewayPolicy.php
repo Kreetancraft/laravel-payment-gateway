@@ -13,22 +13,32 @@ class GatewayPolicy extends PaymentGatewayPolicy
 
     public const PERMISSION_EXTRA_METHODS = ['toggle'];
 
-    public function viewAny(Authenticatable $user): bool
+    public function viewAny(?Authenticatable $user = null): bool
     {
         return $this->allows($user, 'view');
     }
 
-    public function view(Authenticatable $user, ?Gateway $gateway = null): bool
+    public function view(?Authenticatable $user = null, ?Gateway $gateway = null): bool
     {
         return $this->allows($user, 'view');
     }
 
-    public function update(Authenticatable $user, ?Gateway $gateway = null): bool
+    public function create(?Authenticatable $user = null): bool
+    {
+        return $this->allows($user, 'create');
+    }
+
+    public function update(?Authenticatable $user = null, ?Gateway $gateway = null): bool
     {
         return $this->allows($user, 'update');
     }
 
-    public function toggle(Authenticatable $user, ?Gateway $gateway = null): bool
+    public function delete(?Authenticatable $user = null, ?Gateway $gateway = null): bool
+    {
+        return $this->allows($user, 'delete');
+    }
+
+    public function toggle(?Authenticatable $user = null, ?Gateway $gateway = null): bool
     {
         return $this->allows($user, 'toggle');
     }

@@ -35,8 +35,13 @@ abstract class TestCase extends BaseTestCase
         $app['config']->set('payment-gateway.gateways.stripe.enabled', true);
         $app['config']->set('payment-gateway.gateways.himalayan.enabled', false);
         $app['config']->set('payment-gateway.gateways.himalayan.office_id', null);
-        $app['config']->set('payment-gateway.webhook.verify_signature', false);
         $app['config']->set('app.key', 'base64:'.base64_encode(random_bytes(32)));
+        $app['config']->set('payment-gateway.routes.home', '/');
+        $app['config']->set('view.paths', [
+            __DIR__.'/fixtures/views',
+            __DIR__.'/../resources/views',
+            resource_path('views'),
+        ]);
     }
 
     protected function defineDatabaseMigrations(): void

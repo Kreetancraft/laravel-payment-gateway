@@ -5,216 +5,158 @@ declare(strict_types=1);
 namespace Kreetancraft\PaymentGateway\Livewire;
 
 use Illuminate\Contracts\View\View;
+use Illuminate\Support\Str;
+use Kreetancraft\PaymentGateway\Layout;
 use Kreetancraft\PaymentGateway\Models\Coupon;
+use Kreetancraft\PaymentGateway\Models\CouponUsage;
+use Livewire\Attributes\Title;
+use Livewire\Attributes\Url;
 use Livewire\Component;
 use Livewire\WithPagination;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class ManageCoupons extends Component
 {
     use WithPagination;
 
-    public bool $showCreateModal = false;
+    #[Url(except: '')]
+    public string $search = '';
 
-    public bool $showEditModal = false;
+    #[Url(except: '')]
+    public string $typeFilter = '';
 
-    public ?int $editingId = null;
+    #[Url(except: '')]
+    public string $statusFilter = '';
 
-    public string $code = '';
+    #[Url(except: 'created_at')]
+    public string $sort = 'created_at';
 
-    public string $name = '';
+    #[Url(except: 'desc')]
+    public string $direction = 'desc';
 
-    public string $description = '';
-
-    public string $type = 'percentage';
-
-    public int $value = 0;
-
-    public ?int $maxDiscountAmount = null;
-
-    public ?int $minOrderAmount = null;
-
-    public ?int $usageLimit = null;
-
-    public ?int $usageLimitPerUser = null;
-
-    public array $userIds = [];
-
-    public ?string $startsAt = null;
-
-    public ?string $expiresAt = null;
-
-    public bool $isActive = true;
-
-    public array $conditions = [];
-
-    public bool $isStackable = false;
-
-    public bool $isFreeShipping = false;
-
-    public function create(): void
+    public function updatingSearch(): void
     {
-        $this->resetForm();
-        $this->showCreateModal = true;
+        $this->resetPage();
     }
 
-    public function resetForm(): void
+    public function updatingTypeFilter(): void
     {
-        $this->editingId = null;
-        $this->code = '';
-        $this->name = '';
-        $this->description = '';
-        $this->type = 'percentage';
-        $this->value = 0;
-        $this->maxDiscountAmount = null;
-        $this->minOrderAmount = null;
-        $this->usageLimit = null;
-        $this->usageLimitPerUser = null;
-        $this->userIds = [];
-        $this->startsAt = null;
-        $this->expiresAt = null;
-        $this->isActive = true;
-        $this->conditions = [];
-        $this->isStackable = false;
-        $this->isFreeShipping = false;
+        $this->resetPage();
     }
 
-    public function save(): void
+    public function updatingStatusFilter(): void
     {
-        $this->validate([
-            'code' => ['required', 'string', 'max:50', 'unique:coupons,code'],
-            'name' => ['required', 'string', 'max:255'],
-            'type' => ['required', 'in:percentage,fixed,buy_x_get_y,tiered,free_shipping'],
-            'value' => ['required', 'integer', 'min:0'],
-            'maxDiscountAmount' => ['nullable', 'integer', 'min:0'],
-            'minOrderAmount' => ['nullable', 'integer', 'min:0'],
-            'usageLimit' => ['nullable', 'integer', 'min:1'],
-            'usageLimitPerUser' => ['nullable', 'integer', 'min:1'],
-            'userIds' => ['nullable', 'array'],
-            'startsAt' => ['nullable', 'date'],
-            'expiresAt' => ['nullable', 'date', 'after_or_equal:startsAt'],
-            'isActive' => ['boolean'],
-            'conditions' => ['nullable', 'array'],
-            'isStackable' => ['boolean'],
-            'isFreeShipping' => ['boolean'],
-        ]);
-
-        Coupon::create([
-            'code' => strtoupper($this->code),
-            'name' => $this->name,
-            'description' => $this->description,
-            'type' => $this->type,
-            'value' => $this->value,
-            'max_discount_amount' => $this->maxDiscountAmount,
-            'min_order_amount' => $this->minOrderAmount,
-            'usage_limit' => $this->usageLimit,
-            'usage_limit_per_user' => $this->usageLimitPerUser,
-            'user_ids' => $this->userIds,
-            'starts_at' => $this->startsAt,
-            'expires_at' => $this->expiresAt,
-            'is_active' => $this->isActive,
-            'conditions' => $this->conditions,
-            'is_stackable' => $this->isStackable,
-            'is_free_shipping' => $this->isFreeShipping,
-        ]);
-
-        $this->showCreateModal = false;
-        $this->resetForm();
-        session()->flash('coupon_message', 'Coupon created successfully.');
+        $this->resetPage();
     }
 
-    public function edit(int $id): void
+    public function clearFilters(): void
+    {
+        $this->search = '';
+        $this->typeFilter = '';
+        $this->statusFilter = '';
+        $this->resetPage();
+    }
+
+    public function sortBy(string $column): void
+    {
+        if ($this->sort === $column) {
+            $this->direction = $this->direction === 'asc' ? 'desc' : 'asc';
+        } else {
+            $this->sort = $column;
+            $this->direction = 'asc';
+        }
+    }
+
+    public function duplicate(int $id): void
     {
         $coupon = Coupon::findOrFail($id);
+        $this->authorize('create', Coupon::class);
 
-        $this->editingId = $coupon->id;
-        $this->code = $coupon->code;
-        $this->name = $coupon->name ?? '';
-        $this->description = $coupon->description ?? '';
-        $this->type = $coupon->type;
-        $this->value = $coupon->value;
-        $this->maxDiscountAmount = $coupon->max_discount_amount;
-        $this->minOrderAmount = $coupon->min_order_amount;
-        $this->usageLimit = $coupon->usage_limit;
-        $this->usageLimitPerUser = $coupon->usage_limit_per_user;
-        $this->userIds = $coupon->user_ids ?? [];
-        $this->startsAt = $coupon->starts_at?->format('Y-m-d\TH:i');
-        $this->expiresAt = $coupon->expires_at?->format('Y-m-d\TH:i');
-        $this->isActive = (bool) $coupon->is_active;
-        $this->conditions = $coupon->conditions ?? [];
-        $this->isStackable = (bool) $coupon->is_stackable;
-        $this->isFreeShipping = (bool) $coupon->is_free_shipping;
-
-        $this->showEditModal = true;
-    }
-
-    public function update(): void
-    {
-        if ($this->editingId === null) {
-            return;
-        }
-
-        $this->validate([
-            'code' => ['required', 'string', 'max:50', 'unique:coupons,code,'.$this->editingId],
-            'name' => ['required', 'string', 'max:255'],
-            'type' => ['required', 'in:percentage,fixed,buy_x_get_y,tiered,free_shipping'],
-            'value' => ['required', 'integer', 'min:0'],
-            'maxDiscountAmount' => ['nullable', 'integer', 'min:0'],
-            'minOrderAmount' => ['nullable', 'integer', 'min:0'],
-            'usageLimit' => ['nullable', 'integer', 'min:1'],
-            'usageLimitPerUser' => ['nullable', 'integer', 'min:1'],
-            'userIds' => ['nullable', 'array'],
-            'startsAt' => ['nullable', 'date'],
-            'expiresAt' => ['nullable', 'date', 'after_or_equal:startsAt'],
-            'isActive' => ['boolean'],
-            'conditions' => ['nullable', 'array'],
-            'isStackable' => ['boolean'],
-            'isFreeShipping' => ['boolean'],
+        $newCoupon = $coupon->replicate([
+            'uuid',
+            'code',
+            'usage_count',
+            'created_at',
+            'updated_at',
         ]);
 
-        $coupon = Coupon::findOrFail($this->editingId);
+        $newCoupon->uuid = (string) Str::uuid();
+        $newCoupon->code = strtoupper($coupon->code.'-COPY-'.Str::random(3));
+        $newCoupon->name = ($coupon->name ?? $coupon->code).' (Copy)';
+        $newCoupon->usage_count = 0;
+        $newCoupon->save();
 
-        $coupon->update([
-            'code' => strtoupper($this->code),
-            'name' => $this->name,
-            'description' => $this->description,
-            'type' => $this->type,
-            'value' => $this->value,
-            'max_discount_amount' => $this->maxDiscountAmount,
-            'min_order_amount' => $this->minOrderAmount,
-            'usage_limit' => $this->usageLimit,
-            'usage_limit_per_user' => $this->usageLimitPerUser,
-            'user_ids' => $this->userIds,
-            'starts_at' => $this->startsAt,
-            'expires_at' => $this->expiresAt,
-            'is_active' => $this->isActive,
-            'conditions' => $this->conditions,
-            'is_stackable' => $this->isStackable,
-            'is_free_shipping' => $this->isFreeShipping,
-        ]);
-
-        $this->showEditModal = false;
-        $this->resetForm();
-        session()->flash('coupon_message', 'Coupon updated successfully.');
+        session()->flash('coupon_message', "Coupon duplicated as [{$newCoupon->code}].");
     }
 
     public function delete(int $id): void
     {
         $coupon = Coupon::findOrFail($id);
+        $this->authorize('delete', $coupon);
+
+        $code = $coupon->code;
         $coupon->delete();
-        session()->flash('coupon_message', 'Coupon deleted successfully.');
+
+        session()->flash('coupon_message', "Coupon [{$code}] deleted successfully.");
     }
 
-    public function closeModals(): void
+    public function exportCsv(): StreamedResponse
     {
-        $this->showCreateModal = false;
-        $this->showEditModal = false;
-        $this->resetForm();
+        $this->authorize('viewAny', Coupon::class);
+
+        $coupons = Coupon::orderBy('created_at', 'desc')->get();
+
+        $headers = [
+            'Content-Type' => 'text/csv',
+            'Content-Disposition' => 'attachment; filename="coupons_'.date('Y-m-d').'.csv"',
+        ];
+
+        return response()->stream(function () use ($coupons): void {
+            $handle = fopen('php://output', 'w');
+            fputcsv($handle, ['Code', 'Name', 'Type', 'Value', 'Usage Count', 'Usage Limit', 'Status', 'Expires At', 'Created At']);
+
+            foreach ($coupons as $coupon) {
+                fputcsv($handle, [
+                    $coupon->code,
+                    $coupon->name,
+                    $coupon->type,
+                    $coupon->value,
+                    $coupon->usage_count,
+                    $coupon->usage_limit ?? 'Unlimited',
+                    $coupon->is_active ? 'Active' : 'Inactive',
+                    $coupon->expires_at?->format('Y-m-d H:i') ?? 'Never',
+                    $coupon->created_at->format('Y-m-d H:i'),
+                ]);
+            }
+
+            fclose($handle);
+        }, 200, $headers);
     }
 
+    #[Title('Discount Coupons - Admin')]
     public function render(): View
     {
+        $this->authorize('viewAny', Coupon::class);
+
+        $query = Coupon::query()
+            ->when($this->search !== '', fn ($q) => $q->where(fn ($sub) => $sub->where('code', 'like', "%{$this->search}%")->orWhere('name', 'like', "%{$this->search}%")))
+            ->when($this->typeFilter !== '', fn ($q) => $q->where('type', $this->typeFilter))
+            ->when($this->statusFilter === 'active', fn ($q) => $q->where('is_active', true)->where(fn ($sq) => $sq->whereNull('expires_at')->orWhere('expires_at', '>', now())))
+            ->when($this->statusFilter === 'inactive', fn ($q) => $q->where(fn ($sq) => $sq->where('is_active', false)->orWhere('expires_at', '<=', now())))
+            ->orderBy($this->sort, $this->direction);
+
+        $coupons = $query->paginate(15);
+        $totalCount = Coupon::count();
+        $activeCount = Coupon::where('is_active', true)->where(fn ($q) => $q->whereNull('expires_at')->orWhere('expires_at', '>', now()))->count();
+        $totalRedemptions = CouponUsage::sum('usage_count') ?: Coupon::sum('usage_count');
+        $totalDiscountCents = CouponUsage::sum('amount_discounted_cents');
+
         return view('payment-gateway::livewire.manage-coupons', [
-            'coupons' => Coupon::latest()->paginate(15),
-        ]);
+            'coupons' => $coupons,
+            'totalCount' => $totalCount,
+            'activeCount' => $activeCount,
+            'totalRedemptions' => $totalRedemptions,
+            'totalDiscountCents' => $totalDiscountCents,
+        ])->layout(Layout::admin());
     }
 }

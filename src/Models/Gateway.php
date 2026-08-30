@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Kreetancraft\PaymentGateway\Models;
 
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Kreetancraft\PaymentGateway\Database\Factories\GatewayFactory;
@@ -61,6 +60,7 @@ class Gateway extends Model
     protected function casts(): array
     {
         return [
+            'credentials' => 'encrypted:array',
             'enabled' => 'boolean',
             'checkout_redirect' => 'boolean',
             'supports_subscriptions' => 'boolean',
@@ -74,17 +74,6 @@ class Gateway extends Model
     protected static function newFactory(): GatewayFactory
     {
         return GatewayFactory::new();
-    }
-
-    /**
-     * Secure credentials accessor/mutator using dedicated .env encryption key.
-     */
-    protected function credentials(): Attribute
-    {
-        return Attribute::make(
-            get: fn (?string $value): array => GatewayEncrypter::decrypt($value),
-            set: fn (array|string $value): string => is_string($value) ? $value : GatewayEncrypter::encrypt($value),
-        );
     }
 
     public function getCredential(string $key, mixed $default = null): mixed

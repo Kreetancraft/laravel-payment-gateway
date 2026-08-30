@@ -38,8 +38,12 @@ abstract class PaymentGatewayPolicy
         return $action.'-'.Str::kebab((string) $plural);
     }
 
-    protected function allows(Authenticatable $user, string $action): bool
+    protected function allows(?Authenticatable $user, string $action): bool
     {
+        if ($user === null) {
+            return ! $this->permissionsInUse();
+        }
+
         if (! method_exists($user, 'can')) {
             return true;
         }
