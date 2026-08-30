@@ -22,6 +22,8 @@ use Kreetancraft\PaymentGateway\Models\Gateway;
  */
 class PaymentGatewayManager extends Manager implements GatewayResolver
 {
+    private array $resolvedGateways = [];
+
     public function getDefaultDriver(): ?string
     {
         $configured = config('payment-gateway.default');
@@ -138,16 +140,20 @@ class PaymentGatewayManager extends Manager implements GatewayResolver
 
     public function resolve(string $gatewayCode): ?PaymentGateway
     {
+        if (array_key_exists($gatewayCode, $this->resolvedGateways)) {
+            return $this->resolvedGateways[$gatewayCode];
+        }
+
         $gateway = Gateway::where('code', $gatewayCode)->first();
 
         if (! $gateway || ! $gateway->isEnabled()) {
-            return null;
+            return $this->resolvedGateways[$gatewayCode] = null;
         }
 
         try {
-            return $this->driver($gatewayCode);
+            return $this->resolvedGateways[$gatewayCode] = $this->driver($gatewayCode);
         } catch (InvalidArgumentException) {
-            return null;
+            return $this->resolvedGateways[$gatewayCode] = null;
         }
     }
 

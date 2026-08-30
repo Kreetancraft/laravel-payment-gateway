@@ -27,7 +27,7 @@ class CouponController extends Controller
             return response()->json([
                 'valid' => false,
                 'message' => 'Invalid coupon code.',
-            ], 422);
+            ]);
         }
 
         $valid = $coupon->isValid(
@@ -36,15 +36,22 @@ class CouponController extends Controller
             (string) ($validated['currency'] ?? 'USD')
         );
 
+        if (! $valid) {
+            return response()->json([
+                'valid' => false,
+                'message' => 'Coupon is not valid.',
+            ]);
+        }
+
         return response()->json([
-            'valid' => $valid,
-            'coupon' => $valid ? [
+            'valid' => true,
+            'coupon' => [
                 'code' => $coupon->code,
                 'name' => $coupon->name,
                 'type' => $coupon->type,
                 'value' => $coupon->value,
-            ] : null,
-            'message' => $valid ? 'Coupon is valid.' : 'Coupon is not valid.',
+            ],
+            'message' => 'Coupon is valid.',
         ]);
     }
 

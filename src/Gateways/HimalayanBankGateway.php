@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Kreetancraft\PaymentGateway\Gateways;
 
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Str;
 use Kreetancraft\PaymentGateway\Data\PaymentResult;
@@ -163,8 +164,10 @@ class HimalayanBankGateway extends AbstractGateway
         }
     }
 
-    public function webhook(array $payload): WebhookResult
+    public function webhook(Request $request): WebhookResult
     {
+        $payload = $request->all();
+
         $orderNo = (string) (
             data_get($payload, 'orderNo')
             ?? data_get($payload, 'order_no')
@@ -178,9 +181,11 @@ class HimalayanBankGateway extends AbstractGateway
 
         $result = $this->verify(['order_no' => $orderNo]);
 
-        return $result->success
-            ? WebhookResult::success('payment.completed', $orderNo, $result->status, $result->amount, $result->currency)
-            : WebhookResult::failure('payment.failed', $orderNo, $result->errorMessage ?? 'Verification failed.');
+        if (! $result->success) {
+            return WebhookResult::failure('payment.failed', $orderNo, $result->errorMessage ?? 'Verification failed.');
+        }
+
+        return WebhookResult::success('payment.completed', $orderNo, $result->status, $result->amount, $result->currency);
     }
 
     public function getCode(): string
@@ -223,19 +228,19 @@ class HimalayanBankGateway extends AbstractGateway
     private function generateOrderNo(string $seed): string
     {
         $ms = (int) round(microtime(true) * 1000);
+        $suffix = base_convert((string) $ms, 10, 36);
 
-        return Str::upper($seed.'-'.base_convert((string) $ms, 10, 36));
+        return Str::upper("{$seed}-{$suffix}");
     }
 
-    /**
-     * @param  array<string, mixed>  $params
-     */
     private function resolveRedirectUrl(string $type, array $params = [], ?string $overrideUrl = null): string
     {
+        $query = http_build_query($params);
+
         if (filled($overrideUrl)) {
             $separator = str_contains($overrideUrl, '?') ? '&' : '?';
 
-            return $overrideUrl.$separator.http_build_query($params);
+            return "{$overrideUrl}{$separator}{$query}";
         }
 
         $configUrl = config("payment-gateway.routes.redirect_urls.{$type}");
@@ -243,7 +248,7 @@ class HimalayanBankGateway extends AbstractGateway
             if (filter_var($configUrl, FILTER_VALIDATE_URL)) {
                 $separator = str_contains((string) $configUrl, '?') ? '&' : '?';
 
-                return $configUrl.$separator.http_build_query($params);
+                return "{$configUrl}{$separator}{$query}";
             }
             if (Route::has((string) $configUrl)) {
                 return route((string) $configUrl, $params);
@@ -255,7 +260,7 @@ class HimalayanBankGateway extends AbstractGateway
             return route($routeName, $params);
         }
 
-        return url("/payment/{$type}?".http_build_query($params));
+        return url("/payment/{$type}?{$query}");
     }
 
     private function resolveWebhookUrl(): string

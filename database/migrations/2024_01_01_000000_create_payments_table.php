@@ -37,9 +37,4 @@ return new class extends Migration
             $table->index('idempotency_key');
         });
     }
-
-    public function down(): void
-    {
-        Schema::dropIfExists('payments');
-    }
 };

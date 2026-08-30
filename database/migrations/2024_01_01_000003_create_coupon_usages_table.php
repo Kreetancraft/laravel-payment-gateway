@@ -22,9 +22,4 @@ return new class extends Migration
             $table->index(['coupon_id', 'user_id']);
         });
     }
-
-    public function down(): void
-    {
-        Schema::dropIfExists('coupon_usages');
-    }
 };

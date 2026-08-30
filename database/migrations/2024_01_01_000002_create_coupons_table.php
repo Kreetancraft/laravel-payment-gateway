@@ -61,9 +61,4 @@ return new class extends Migration
             $table->index(['model_type', 'model_id']);
         });
     }
-
-    public function down(): void
-    {
-        Schema::dropIfExists('coupons');
-    }
 };

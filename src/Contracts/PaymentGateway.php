@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Kreetancraft\PaymentGateway\Contracts;
 
+use Illuminate\Http\Request;
 use Kreetancraft\PaymentGateway\Data\PaymentResult;
 use Kreetancraft\PaymentGateway\Data\RefundResult;
 use Kreetancraft\PaymentGateway\Data\VerificationResult;
@@ -17,7 +18,7 @@ interface PaymentGateway
 
     public function verify(array $data): VerificationResult;
 
-    public function webhook(array $payload): WebhookResult;
+    public function webhook(Request $request): WebhookResult;
 
     public function supportsCurrency(string $currency): bool;
 

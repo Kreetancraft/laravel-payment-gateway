@@ -97,11 +97,14 @@ class Payment extends Model
             }
 
             if (blank($payment->reference)) {
-                $payment->reference = 'PMT-'.now()->format('ymd').'-'.Str::upper(Str::random(6));
+                $date = now()->format('ymd');
+                $rand = Str::upper(Str::random(6));
+                $payment->reference = "PMT-{$date}-{$rand}";
             }
 
             if (blank($payment->idempotency_key)) {
-                $payment->idempotency_key = hash('sha256', "{$payment->gateway}:{$payment->amount_cents}:{$payment->currency}:".Str::random(16));
+                $rand = Str::random(16);
+                $payment->idempotency_key = hash('sha256', "{$payment->gateway}:{$payment->amount_cents}:{$payment->currency}:{$rand}");
             }
         });
     }

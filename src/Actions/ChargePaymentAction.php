@@ -88,31 +88,10 @@ class ChargePaymentAction
 
         $result = $gateway->charge($data);
 
-        if (! $result->success) {
-            Payment::create([
-                'amount_cents' => (int) $validated['amount_cents'],
-                'currency' => $currency,
-                'gateway' => $gatewayCode,
-                'gateway_reference' => $result->orderReference ?: null,
-                'status' => PaymentStatus::Failed,
-                'idempotency_key' => $idempotencyKey,
-                'customer_email' => $data['customer_email'] ?? null,
-                'customer_name' => $data['customer_name'] ?? null,
-                'customer_phone' => $data['customer_phone'] ?? null,
-                'customer_address' => $data['customer_address'] ?? null,
-                'description' => $data['description'] ?? null,
-                'metadata' => $data['metadata'] ?? null,
-            ]);
-
-            return $result;
-        }
-
-        Payment::create([
+        $paymentData = [
             'amount_cents' => (int) $validated['amount_cents'],
             'currency' => $currency,
             'gateway' => $gatewayCode,
-            'gateway_reference' => $result->orderReference,
-            'status' => $result->redirectUrl !== null ? PaymentStatus::Pending : PaymentStatus::Succeeded,
             'idempotency_key' => $idempotencyKey,
             'customer_email' => $data['customer_email'] ?? null,
             'customer_name' => $data['customer_name'] ?? null,
@@ -120,6 +99,22 @@ class ChargePaymentAction
             'customer_address' => $data['customer_address'] ?? null,
             'description' => $data['description'] ?? null,
             'metadata' => $data['metadata'] ?? null,
+        ];
+
+        if (! $result->success) {
+            Payment::create([
+                ...$paymentData,
+                'gateway_reference' => $result->orderReference ?: null,
+                'status' => PaymentStatus::Failed,
+            ]);
+
+            return $result;
+        }
+
+        Payment::create([
+            ...$paymentData,
+            'gateway_reference' => $result->orderReference,
+            'status' => $result->redirectUrl !== null ? PaymentStatus::Pending : PaymentStatus::Succeeded,
             'paid_at' => $result->redirectUrl === null ? now() : null,
         ]);
 

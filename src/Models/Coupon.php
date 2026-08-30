@@ -23,34 +23,25 @@ class Coupon extends Model
 
     protected $table = 'coupons';
 
-    // All fields that can be mass assigned
     protected $fillable = [
         'uuid',
-        'code',           // Unique coupon code (e.g., "SAVE20")
-        'name',           // Display name (e.g., "20% Off")
-        'description',    // Optional description
-
-        // Discount type and value
-        'type',              // percentage, fixed, buy_x_get_y, tiered, free_shipping
-        'value',             // Percentage (20) or fixed amount in cents (2000 = $20)
-        'max_discount_amount', // Cap for percentage discounts (in cents)
-        'min_order_amount',    // Minimum order amount in cents
-
-        // Usage limits
-        'usage_limit',          // Total times this coupon can be used
-        'usage_limit_per_user', // Max uses per user
-        'user_ids',             // Specific user IDs allowed (JSON array)
-        'usage_count',          // How many times used
-
-        // Validity dates
-        'starts_at',     // When coupon becomes valid
-        'expires_at',    // When coupon expires
-        'is_active',     // Is this coupon active?
-
-        // Advanced features
-        'conditions',      // JSON: buy_x_get_y, tiered, time windows, etc.
-        'is_stackable',    // Can stack with other coupons
-        'is_free_shipping', // Free shipping coupon
+        'code',
+        'name',
+        'description',
+        'type',
+        'value',
+        'max_discount_amount',
+        'min_order_amount',
+        'usage_limit',
+        'usage_limit_per_user',
+        'user_ids',
+        'usage_count',
+        'starts_at',
+        'expires_at',
+        'is_active',
+        'conditions',
+        'is_stackable',
+        'is_free_shipping',
     ];
 
     // Automatic casting for proper types
@@ -87,10 +78,6 @@ class Coupon extends Model
             }
         });
     }
-
-    // ============================================
-    // SCOPES - Easy query filters
-    // ============================================
 
     // Only active coupons within their date range
     public function scopeActive(Builder $query): Builder
@@ -141,37 +128,24 @@ class Coupon extends Model
         });
     }
 
-    // ============================================
-    // COUPON VALIDATION METHODS
-    // ============================================
-
-    /**
-     * Check if coupon is valid for a given user, amount, and currency
-     * Returns true/false - simple and clear
-     */
     public function isValid(?int $userId = null, ?float $amount = null, ?string $currency = null): bool
     {
-        // 1. Must be active
         if (! $this->is_active) {
             return false;
         }
 
-        // 2. Check start date
         if ($this->starts_at && $this->starts_at->isFuture()) {
             return false;
         }
 
-        // 3. Check expiration
         if ($this->expires_at && $this->expires_at->isPast()) {
             return false;
         }
 
-        // 4. Check usage limit
         if ($this->usage_limit && $this->usage_count >= $this->usage_limit) {
             return false;
         }
 
-        // 4. Check per-user limit
         if ($userId !== null && $this->usage_limit_per_user) {
             $userUsage = $this->usages()->where('user_id', $userId)->count();
             if ($userUsage >= $this->usage_limit_per_user) {
@@ -179,29 +153,23 @@ class Coupon extends Model
             }
         }
 
-        // 5. Check user whitelist
         if ($userId !== null && $this->user_ids !== null) {
             if (! in_array($userId, $this->user_ids)) {
                 return false;
             }
         }
 
-        // 5. Check minimum order amount
         if ($amount !== null && $this->min_order_amount && $amount < $this->min_order_amount) {
             return false;
         }
 
-        // 6. Check currency restrictions
-        if ($currency && $this->conditions && isset($this->conditions['currencies'])) {
-            if (! in_array(strtoupper($currency), array_map('strtoupper', $this->conditions['currencies']))) {
-                return false;
-            }
+        if (! $this->supportsCurrency($currency)) {
+            return false;
         }
 
         return true;
     }
 
-    // Simple wrapper - can this coupon be applied?
     public function canApply(?int $userId = null, ?float $amount = null, ?string $currency = null): bool
     {
         return $this->isValid($userId, $amount, $currency);
@@ -221,10 +189,6 @@ class Coupon extends Model
 
         return in_array(strtoupper($currency), array_map('strtoupper', (array) $currencies), true);
     }
-
-    // ============================================
-    // CALCULATE DISCOUNT AMOUNT
-    // ============================================
 
     /**
      * Calculate discount in cents for a given amount
@@ -290,10 +254,6 @@ class Coupon extends Model
 
         return strtoupper($code);
     }
-
-    // ============================================
-    // RELATIONSHIPS
-    // ============================================
 
     public function usages(): HasMany
     {

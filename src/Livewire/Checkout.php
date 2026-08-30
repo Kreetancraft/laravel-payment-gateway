@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Kreetancraft\PaymentGateway\Livewire;
 
 use Illuminate\Contracts\View\View;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\Route;
 use Kreetancraft\PaymentGateway\Actions\ChargePaymentAction;
 use Kreetancraft\PaymentGateway\Contracts\GatewayResolver;
@@ -12,6 +13,7 @@ use Kreetancraft\PaymentGateway\Models\Coupon;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Url;
 use Livewire\Component;
+use Throwable;
 
 class Checkout extends Component
 {
@@ -30,23 +32,23 @@ class Checkout extends Component
     #[Url]
     public ?string $coupon = null;
 
-    public string $orderTitle = '';
+    public ?string $orderTitle = '';
 
-    public string $description = '';
+    public ?string $description = '';
 
-    public string $customerEmail = '';
+    public ?string $customerEmail = '';
 
-    public string $customerName = '';
+    public ?string $customerName = '';
 
-    public string $customerPhone = '';
+    public ?string $customerPhone = '';
 
-    public string $amountInput = '';
+    public ?string $amountInput = '';
 
-    public string $currencyInput = 'USD';
+    public ?string $currencyInput = 'USD';
 
-    public string $selectedGateway = '';
+    public ?string $selectedGateway = '';
 
-    public string $couponCode = '';
+    public ?string $couponCode = '';
 
     public ?string $returnUrl = null;
 
@@ -154,8 +156,8 @@ class Checkout extends Component
         }
 
         // Order & Metadata
-        $this->orderTitle = $orderTitle ?: request()->query('order_title', 'Order Payment');
-        $this->description = $description ?: request()->query('description', '');
+        $this->orderTitle = (string) ($orderTitle ?: request()->query('order_title', request()->query('order', 'Order Payment')));
+        $this->description = (string) ($description ?: request()->query('description', ''));
         $this->returnUrl = $returnUrl ?: request()->query('return_url', null);
         $this->metadata = $metadata;
 
@@ -435,7 +437,7 @@ class Checkout extends Component
         return app(GatewayResolver::class)->getEnabledGateways();
     }
 
-    public function charge(): mixed
+    public function charge(): ?RedirectResponse
     {
         $this->clearError();
         $this->isRedirecting = false;
@@ -504,8 +506,8 @@ class Checkout extends Component
             }
 
             return null;
-        } catch (\Throwable $e) {
-            $this->showError('Payment Error: '.$e->getMessage());
+        } catch (Throwable $e) {
+            $this->showError("Payment Error: {$e->getMessage()}");
 
             return null;
         }

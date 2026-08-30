@@ -124,12 +124,14 @@ class HblClient
 
         $body = $this->codec->encrypt($payload, $this->signingKey(), $this->pacoEncryptionKey());
 
+        $baseUrl = rtrim((string) (HblConfig::get('base_url') ?: 'https://core.demo-paco.2c2p.com/'), '/');
+
         $response = Http::withBody($body, 'application/jose; charset=utf-8')
             ->withHeaders([
                 'Accept' => 'application/jose',
                 'CompanyApiKey' => $apiKey,
             ])
-            ->baseUrl(rtrim((string) (HblConfig::get('base_url') ?: 'https://core.demo-paco.2c2p.com/'), '/').'/')
+            ->baseUrl("{$baseUrl}/")
             ->timeout(30)
             ->connectTimeout(10)
             ->throw()
@@ -175,7 +177,7 @@ class HblClient
                     }
 
                     // Fallback to legacy key name with _path suffix if present
-                    $legacyRaw = $gateway->getCredential($keyName.'_path');
+                    $legacyRaw = $gateway->getCredential("{$keyName}_path");
                     if (filled($legacyRaw)) {
                         return trim((string) $legacyRaw);
                     }
@@ -185,7 +187,7 @@ class HblClient
         }
 
         // 2. Fallback to runtime config
-        $configValue = HblConfig::get($keyName) ?? HblConfig::get($keyName.'_path');
+        $configValue = HblConfig::get($keyName) ?? HblConfig::get("{$keyName}_path");
         if (filled($configValue)) {
             return trim((string) $configValue);
         }

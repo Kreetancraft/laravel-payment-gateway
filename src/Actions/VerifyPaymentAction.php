@@ -71,15 +71,15 @@ class VerifyPaymentAction
     {
         $statusStr = strtolower($result->status);
 
-        if ($result->success && in_array($statusStr, ['completed', 'settled', 'success', 'approved', 'succeeded', 'paid', '0000'], true)) {
-            $payment->status = PaymentStatus::Succeeded;
-            if ($payment->paid_at === null) {
-                $payment->paid_at = now();
-            }
-        } elseif (in_array($statusStr, ['cancelled', 'canceled'], true)) {
-            $payment->status = PaymentStatus::Cancelled;
-        } elseif (! $result->success || in_array($statusStr, ['failed', 'declined', 'rejected', 'error'], true)) {
-            $payment->status = PaymentStatus::Failed;
+        $payment->status = match (true) {
+            $result->success && in_array($statusStr, ['completed', 'settled', 'success', 'approved', 'succeeded', 'paid', '0000'], true) => PaymentStatus::Succeeded,
+            in_array($statusStr, ['cancelled', 'canceled'], true) => PaymentStatus::Cancelled,
+            ! $result->success || in_array($statusStr, ['failed', 'declined', 'rejected', 'error'], true) => PaymentStatus::Failed,
+            default => $payment->status,
+        };
+
+        if ($payment->status === PaymentStatus::Succeeded) {
+            $payment->paid_at ??= now();
         }
 
         if (filled($result->transactionId) && blank($payment->gateway_reference)) {

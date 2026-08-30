@@ -4,15 +4,19 @@ declare(strict_types=1);
 
 namespace Kreetancraft\PaymentGateway\Gateways;
 
+use Exception;
+use Illuminate\Http\Request;
 use Kreetancraft\PaymentGateway\Data\PaymentResult;
 use Kreetancraft\PaymentGateway\Data\RefundResult;
 use Kreetancraft\PaymentGateway\Data\VerificationResult;
 use Kreetancraft\PaymentGateway\Data\WebhookResult;
 use Stripe\Exception\ApiErrorException;
+use Stripe\Exception\SignatureVerificationException;
 use Stripe\PaymentIntent;
 use Stripe\Refund;
 use Stripe\Stripe;
 use Stripe\Webhook;
+use UnexpectedValueException;
 
 class StripeGateway extends AbstractGateway
 {
@@ -54,7 +58,7 @@ class StripeGateway extends AbstractGateway
             return PaymentResult::failure(
                 orderReference: $data['order_reference'] ?? '',
                 errorMessage: $e->getMessage(),
-                errorCode: $e->getCode()
+                errorCode: $e->getStripeCode() ?? (string) $e->getCode()
             );
         }
     }
@@ -106,16 +110,39 @@ class StripeGateway extends AbstractGateway
         }
     }
 
-    public function webhook(array $payload): WebhookResult
+    public function webhook(Request $request): WebhookResult
     {
-        $webhookSecret = $this->gateway->getStripeWebhookSecret();
+        $secret = $this->gateway->getStripeWebhookSecret();
+
+        if (! $secret) {
+            return WebhookResult::failure(
+                eventType: 'unknown',
+                transactionId: '',
+                errorMessage: 'Webhook secret not configured'
+            );
+        }
 
         try {
-            $event = Webhook::constructFrom(
-                json_encode($payload),
-                $this->gateway->getStripeWebhookSecret()
+            $event = Webhook::constructEvent(
+                $request->getContent(),
+                $request->header('Stripe-Signature', ''),
+                $secret,
             );
+        } catch (SignatureVerificationException $e) {
+            return WebhookResult::failure(
+                eventType: 'unknown',
+                transactionId: '',
+                errorMessage: "Signature verification failed: {$e->getMessage()}"
+            );
+        } catch (UnexpectedValueException $e) {
+            return WebhookResult::failure(
+                eventType: 'unknown',
+                transactionId: '',
+                errorMessage: "Invalid payload: {$e->getMessage()}"
+            );
+        }
 
+        try {
             $eventType = $event->type;
             $paymentIntent = $event->data->object ?? null;
 
@@ -139,7 +166,7 @@ class StripeGateway extends AbstractGateway
                 amount: ($paymentIntent->amount ?? 0) / 100,
                 currency: strtoupper($paymentIntent->currency ?? ''),
             );
-        } catch (\Exception $e) {
+        } catch (Exception $e) {
             return WebhookResult::failure(
                 eventType: 'unknown',
                 transactionId: '',

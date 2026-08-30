@@ -27,13 +27,13 @@ class PaymentResult extends Data
         );
     }
 
-    public static function failure(string $orderReference, string $errorMessage, ?string $errorCode = null): self
+    public static function failure(string $orderReference, string $errorMessage, string|int|null $errorCode = null): self
     {
         return new self(
             success: false,
             orderReference: $orderReference,
             errorMessage: $errorMessage,
-            errorCode: $errorCode,
+            errorCode: $errorCode !== null ? (string) $errorCode : null,
         );
     }
 }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Kreetancraft\PaymentGateway\Actions;
 
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Kreetancraft\PaymentGateway\Contracts\GatewayResolver;
 use Kreetancraft\PaymentGateway\Data\WebhookResult;
@@ -11,6 +12,7 @@ use Kreetancraft\PaymentGateway\Enums\PaymentStatus;
 use Kreetancraft\PaymentGateway\Models\Payment;
 use Lorisleiva\Actions\Concerns\AsAction;
 use Stripe\Webhook;
+use Throwable;
 
 class HandleWebhookAction
 {
@@ -20,11 +22,7 @@ class HandleWebhookAction
         protected GatewayResolver $resolver,
     ) {}
 
-    /**
-     * @param  array<string, mixed>  $payload
-     * @param  array<string, mixed>  $headers
-     */
-    public function handle(string $gateway, array $payload, array $headers = []): WebhookResult
+    public function handle(string $gateway, Request|array $request = [], array $headers = [], ?array $payload = null): WebhookResult
     {
         if (blank($gateway)) {
             return WebhookResult::failure(
@@ -44,6 +42,27 @@ class HandleWebhookAction
             );
         }
 
+        if ($payload !== null && empty($request)) {
+            $request = $payload;
+        }
+
+        if (is_array($request)) {
+            $rawPayload = $request;
+            $request = Request::create(
+                uri: "/payment/webhook/{$gateway}",
+                method: 'POST',
+                parameters: $rawPayload,
+                server: collect($headers)->mapWithKeys(fn (mixed $v, mixed $k): array => [
+                    'HTTP_'.strtoupper(str_replace('-', '_', (string) $k)) => $v,
+                ])->all(),
+                content: json_encode($rawPayload) ?: ''
+            );
+            $payload = $rawPayload;
+        } else {
+            $payload = $request->all() ?: (array) json_decode($request->getContent() ?: '[]', true);
+            $headers = $request->headers->all();
+        }
+
         if (! $this->verifySignature($gateway, $payload, $headers)) {
             return WebhookResult::failure(
                 eventType: 'unknown',
@@ -52,7 +71,7 @@ class HandleWebhookAction
             );
         }
 
-        $result = $gatewayInstance->webhook($payload);
+        $result = $gatewayInstance->webhook($request);
 
         if (! $result->success) {
             Log::warning("Webhook handling failed for gateway [{$gateway}]: {$result->errorMessage}", [
@@ -115,7 +134,7 @@ class HandleWebhookAction
                 Webhook::constructEvent($rawPayload, (string) $signature, $secret);
 
                 return true;
-            } catch (\Throwable) {
+            } catch (Throwable) {
                 return false;
             }
         }

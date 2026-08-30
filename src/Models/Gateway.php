@@ -88,24 +88,10 @@ class Gateway extends Model
         $this->credentials = $credentials;
     }
 
-    public function getConfig(string $key, mixed $default = null): mixed
-    {
-        return $this->getCredential($key, $default);
-    }
-
-    public function setConfig(string $key, mixed $value): void
-    {
-        $this->setCredential($key, $value);
-    }
-
     public function getConfigValue(string $key, mixed $default = null): mixed
     {
         return $this->getCredential($key, $default);
     }
-
-    // ============================================
-    // STRIPE CREDENTIALS GETTERS & SETTERS
-    // ============================================
 
     public function getStripeSecretKey(): ?string
     {
@@ -136,10 +122,6 @@ class Gateway extends Model
     {
         $this->setCredential('webhook_secret', $value);
     }
-
-    // ============================================
-    // HIMALAYAN BANK CREDENTIALS GETTERS & SETTERS
-    // ============================================
 
     public function getHimalayanOfficeId(): ?string
     {
@@ -261,10 +243,6 @@ class Gateway extends Model
         $this->setPacoSigningPublicKey($value);
     }
 
-    // ============================================
-    // METADATA & HELPER METHODS
-    // ============================================
-
     public function getLabel(): string
     {
         return $this->label;
@@ -304,11 +282,6 @@ class Gateway extends Model
     public function getCapabilities(): array
     {
         return (array) ($this->capabilities ?? []);
-    }
-
-    public function checkoutRedirect(): bool
-    {
-        return (bool) $this->checkout_redirect;
     }
 
     public function usesCheckoutRedirect(): bool
@@ -376,10 +349,6 @@ class Gateway extends Model
             ->map(fn ($key) => (string) $key)
             ->all();
     }
-
-    // ============================================
-    // ELOQUENT SCOPES
-    // ============================================
 
     public function scopeEnabled(Builder $query): Builder
     {

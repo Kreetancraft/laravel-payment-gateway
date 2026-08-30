@@ -53,10 +53,12 @@ class RefundPaymentAction
         $requestedCents = (int) round($amount * 100);
 
         if ($requestedCents > $remainingCents) {
+            $formattedRemaining = $remainingCents / 100;
+
             return RefundResult::failure(
                 transactionId: $transactionId,
                 amount: $amount,
-                errorMessage: "Refund amount [{$amount}] exceeds remaining refundable amount [".($remainingCents / 100).'].',
+                errorMessage: "Refund amount [{$amount}] exceeds remaining refundable amount [{$formattedRemaining}].",
                 errorCode: 'amount_exceeds_balance'
             );
         }
@@ -80,13 +82,11 @@ class RefundPaymentAction
 
         $payment->refunded_amount_cents += $requestedCents;
 
+        $payment->status = PaymentStatus::PartiallyRefunded;
         if ($payment->refunded_amount_cents >= $payment->amount_cents) {
             $payment->status = PaymentStatus::Refunded;
-            $payment->refunded_at = now();
-        } else {
-            $payment->status = PaymentStatus::PartiallyRefunded;
-            $payment->refunded_at = now();
         }
+        $payment->refunded_at = now();
 
         $payment->save();
 

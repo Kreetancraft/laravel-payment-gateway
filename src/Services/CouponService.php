@@ -19,10 +19,6 @@ class CouponService
         private readonly GatewayResolver $resolver
     ) {}
 
-    /**
-     * Apply a coupon code to an amount
-     * Main entry point - handles single and multiple coupons
-     */
     public function handle(array $data): array
     {
         $code = $data['code'];
@@ -34,15 +30,11 @@ class CouponService
         return $this->apply($code, $userId, $amountCents, $currency, $context);
     }
 
-    /**
-     * Apply a single coupon code to an amount
-     * Returns discount info and final amount
-     */
     public function apply(string $code, ?int $userId, int $amountCents, string $currency, array $context = []): array
     {
         $coupon = Coupon::where('code', $code)->firstOrFail();
 
-        $validation = $this->validate($code, $userId, $amountCents, $currency);
+        $validation = $this->validate($code, $userId, $amountCents, $currency, $coupon);
 
         if (! $validation['valid']) {
             return [
@@ -81,13 +73,9 @@ class CouponService
         ];
     }
 
-    /**
-     * Validate a coupon code against user, amount, currency
-     * Returns array with 'valid' boolean and error details if invalid
-     */
-    public function validate(string $code, ?int $userId, int $amountCents, string $currency): array
+    public function validate(string $code, ?int $userId, int $amountCents, string $currency, ?Coupon $coupon = null): array
     {
-        $coupon = Coupon::where('code', $code)->first();
+        $coupon ??= Coupon::where('code', $code)->first();
 
         if (! $coupon) {
             return [
@@ -152,9 +140,11 @@ class CouponService
         }
 
         if ($amountCents < $coupon->min_order_amount) {
+            $formattedAmount = number_format(($coupon->min_order_amount ?? 0) / 100, 2);
+
             return [
                 'valid' => false,
-                'message' => 'Minimum order amount is '.number_format(($coupon->min_order_amount ?? 0) / 100, 2).'.',
+                'message' => "Minimum order amount is {$formattedAmount}.",
                 'code' => 'MIN_ORDER_NOT_MET',
             ];
         }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Kreetancraft\PaymentGateway\Gateways;
 
+use Illuminate\Http\Request;
 use Kreetancraft\PaymentGateway\Contracts\PaymentGateway;
 use Kreetancraft\PaymentGateway\Data\PaymentResult;
 use Kreetancraft\PaymentGateway\Data\RefundResult;
@@ -13,12 +14,7 @@ use Kreetancraft\PaymentGateway\Models\Gateway;
 
 abstract class AbstractGateway implements PaymentGateway
 {
-    protected Gateway $gateway;
-
-    public function __construct(Gateway $gateway)
-    {
-        $this->gateway = $gateway;
-    }
+    public function __construct(protected Gateway $gateway) {}
 
     abstract public function charge(array $data): PaymentResult;
 
@@ -26,7 +22,7 @@ abstract class AbstractGateway implements PaymentGateway
 
     abstract public function verify(array $data): VerificationResult;
 
-    abstract public function webhook(array $payload): WebhookResult;
+    abstract public function webhook(Request $request): WebhookResult;
 
     public function supportsCurrency(string $currency): bool
     {

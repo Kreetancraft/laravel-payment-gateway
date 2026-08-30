@@ -35,9 +35,4 @@ return new class extends Migration
             $table->index('enabled');
         });
     }
-
-    public function down(): void
-    {
-        Schema::dropIfExists('payment_gateways');
-    }
 };

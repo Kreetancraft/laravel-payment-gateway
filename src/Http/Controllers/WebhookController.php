@@ -15,8 +15,7 @@ class WebhookController extends Controller
     {
         $result = HandleWebhookAction::run(
             gateway: $gateway,
-            payload: $request->all() ?: (array) json_decode($request->getContent() ?: '[]', true),
-            headers: $request->headers->all(),
+            request: $request,
         );
 
         if (! $result->success) {
@@ -34,10 +33,5 @@ class WebhookController extends Controller
             'transaction_id' => $result->transactionId,
             'status' => $result->status,
         ]);
-    }
-
-    public function handle(Request $request, string $gateway): JsonResponse
-    {
-        return $this->__invoke($request, $gateway);
     }
 }

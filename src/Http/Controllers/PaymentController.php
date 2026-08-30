@@ -174,6 +174,7 @@ class PaymentController extends Controller
 
         return response()->json([
             'success' => true,
+            'enabled' => $driverCodes,
             'gateways' => $drivers,
             'count' => count($drivers),
         ]);
