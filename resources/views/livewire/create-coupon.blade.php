@@ -128,13 +128,13 @@
                 <x-payment-gateway::form-section :title="__('Schedule & Stacking')">
                     <flux:field>
                         <flux:label>{{ __('Starts At (optional)') }}</flux:label>
-                        <flux:input type="datetime-local" wire:model.blur="startsAt" />
+                        <flux:input icon="calendar" wire:model.blur="startsAt" placeholder="YYYY-MM-DD HH:MM" />
                         <flux:error name="startsAt" />
                     </flux:field>
 
                     <flux:field>
                         <flux:label>{{ __('Expires At (optional)') }}</flux:label>
-                        <flux:input type="datetime-local" wire:model.blur="expiresAt" />
+                        <flux:input icon="calendar" wire:model.blur="expiresAt" placeholder="YYYY-MM-DD HH:MM" />
                         <flux:error name="expiresAt" />
                     </flux:field>
 
