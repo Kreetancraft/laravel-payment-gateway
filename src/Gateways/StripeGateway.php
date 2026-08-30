@@ -28,7 +28,6 @@ class StripeGateway extends AbstractGateway
             $paymentIntent = PaymentIntent::create([
                 'amount' => $data['amount_cents'],
                 'currency' => strtolower($data['currency']),
-                'payment_method_types' => ['card'],
                 'description' => $data['description'] ?? '',
                 'metadata' => array_merge(
                     $data['metadata'] ?? [],

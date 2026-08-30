@@ -14,6 +14,19 @@ class HblConfig
         return (string) config('payment-gateway.gateways.himalayan.environment', config('payment-gateway.gateways.himalayan.env', 'demo'));
     }
 
+    public static function baseUrl(): string
+    {
+        $direct = config('payment-gateway.gateways.himalayan.base_url');
+        if (filled($direct)) {
+            return (string) $direct;
+        }
+
+        return match (strtolower(self::env())) {
+            'production', 'live' => 'https://core.paco.2c2p.com/',
+            default => 'https://core.demo-paco.2c2p.com/',
+        };
+    }
+
     public static function get(string $key, mixed $default = null): mixed
     {
         $direct = config("payment-gateway.gateways.himalayan.{$key}");

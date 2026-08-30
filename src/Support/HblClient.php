@@ -43,8 +43,28 @@ class HblClient
      */
     public function transactionList(array $advSearchParams): array
     {
+        $officeId = $this->getOfficeId();
+
+        $params = array_merge([
+            'controllerInternalID' => null,
+            'officeId' => [$officeId],
+            'invoiceNo2C2P' => null,
+            'fromDate' => '0001-01-01T00:00:00',
+            'toDate' => '0001-01-01T00:00:00',
+            'amountFrom' => null,
+            'amountTo' => null,
+        ], $advSearchParams);
+
+        if (isset($params['orderNo']) && is_string($params['orderNo'])) {
+            $params['orderNo'] = [$params['orderNo']];
+        }
+
+        if (isset($params['officeId']) && is_string($params['officeId'])) {
+            $params['officeId'] = [$params['officeId']];
+        }
+
         return $this->send('api/1.0/Inquiry/transactionList', [
-            'advSearchParams' => $advSearchParams,
+            'advSearchParams' => $params,
         ]);
     }
 
@@ -124,9 +144,9 @@ class HblClient
 
         $body = $this->codec->encrypt($payload, $this->signingKey(), $this->pacoEncryptionKey());
 
-        $baseUrl = rtrim((string) (HblConfig::get('base_url') ?: 'https://core.demo-paco.2c2p.com/'), '/');
+        $baseUrl = $this->getBaseUrl();
 
-        $response = Http::withBody($body, 'application/jose; charset=utf-8')
+        $httpResponse = Http::withBody($body, 'application/jose; charset=utf-8')
             ->withHeaders([
                 'Accept' => 'application/jose',
                 'CompanyApiKey' => $apiKey,
@@ -134,11 +154,37 @@ class HblClient
             ->baseUrl("{$baseUrl}/")
             ->timeout(30)
             ->connectTimeout(10)
-            ->throw()
-            ->post($path)
-            ->body();
+            ->post($path);
 
-        return $this->codec->decrypt($response, $this->decryptionKey(), $this->pacoSigningKey(), $apiKey);
+        $responseBody = (string) $httpResponse->body();
+
+        if (str_starts_with($responseBody, 'ey')) {
+            try {
+                $decrypted = $this->codec->decrypt($responseBody, $this->decryptionKey(), $this->pacoSigningKey(), $apiKey);
+
+                if ($httpResponse->failed()) {
+                    $errorMsg = data_get($decrypted, 'response.ErrorDetails.Message')
+                        ?? data_get($decrypted, 'response.message')
+                        ?? data_get($decrypted, 'error')
+                        ?? "HTTP {$httpResponse->status()} from HBL gateway";
+
+                    throw new RuntimeException("HBL API Error ({$httpResponse->status()}): {$errorMsg}");
+                }
+
+                return $decrypted;
+            } catch (Throwable $e) {
+                if ($httpResponse->failed()) {
+                    throw new RuntimeException("HBL API Error ({$httpResponse->status()}): {$e->getMessage()}");
+                }
+                throw $e;
+            }
+        }
+
+        if ($httpResponse->failed()) {
+            throw new RuntimeException("HBL API Error ({$httpResponse->status()}): {$responseBody}");
+        }
+
+        return (array) json_decode($responseBody, true);
     }
 
     private function signingKey(): JWK
@@ -193,5 +239,30 @@ class HblClient
         }
 
         throw new RuntimeException("HBL JOSE key [{$keyName}] is not configured in database.");
+    }
+
+    private function getBaseUrl(): string
+    {
+        if (app()->bound(GatewayResolver::class)) {
+            try {
+                $gateway = app(GatewayResolver::class)->getGatewayConfigModel('himalayan');
+                if ($gateway) {
+                    $customUrl = $gateway->getCredential('base_url');
+                    if (filled($customUrl)) {
+                        return rtrim((string) $customUrl, '/');
+                    }
+
+                    $env = strtolower((string) ($gateway->getCredential('environment') ?? 'demo'));
+
+                    return match ($env) {
+                        'production', 'live' => 'https://core.paco.2c2p.com',
+                        default => 'https://core.demo-paco.2c2p.com',
+                    };
+                }
+            } catch (Throwable) {
+            }
+        }
+
+        return rtrim(HblConfig::baseUrl(), '/');
     }
 }
