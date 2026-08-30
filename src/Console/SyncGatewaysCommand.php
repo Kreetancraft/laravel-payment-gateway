@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace Kreetancraft\PaymentGateway\Console;
 
 use Illuminate\Console\Command;
-use Kreetancraft\PaymentGateway\Models\Gateway;
 use Kreetancraft\PaymentGateway\Contracts\GatewayResolver;
+use Kreetancraft\PaymentGateway\Models\Gateway;
 
 class SyncGatewaysCommand extends Command
 {
@@ -22,20 +22,23 @@ class SyncGatewaysCommand extends Command
 
         if (! $toConfig && ! $toDatabase) {
             $this->error('Please specify either --to-config or --to-database');
+
             return self::FAILURE;
         }
 
         if ($toConfig && $toDatabase) {
             $this->error('Cannot sync both directions at once. Choose --to-config or --to-database.');
+
             return self::FAILURE;
         }
 
-        $resolver = app(\Kreetancraft\PaymentGateway\Contracts\GatewayResolver::class);
+        $resolver = app(GatewayResolver::class);
         $enabled = $resolver->getEnabledGateways();
 
         if ($this->option('gateway')) {
-            if (!in_array($gatewayCode, $enabled, true)) {
+            if (! in_array($gatewayCode, $enabled, true)) {
                 $this->error("Gateway [{$gatewayCode}] is not enabled or does not exist.");
+
                 return self::FAILURE;
             }
             $this->syncSingle($gatewayCode, $toConfig, $toDatabase);
@@ -65,10 +68,11 @@ class SyncGatewaysCommand extends Command
 
         if (empty($config)) {
             $this->warn("Gateway [{$code}] not found in config.");
+
             return;
         }
 
-        $gateway = \Kreetancraft\PaymentGateway\Models\Gateway::updateOrCreate(
+        $gateway = Gateway::updateOrCreate(
             ['code' => $code],
             [
                 'label' => $config['label'] ?? $code,
@@ -82,7 +86,6 @@ class SyncGatewaysCommand extends Command
                 'environment' => $config['environment'] ?? 'demo',
                 'config_fields' => $config['config_fields'] ?? [],
                 'credentials' => $config['credentials'] ?? [],
-                'enabled' => $config['enabled'] ?? false,
             ]
         );
 
@@ -91,14 +94,15 @@ class SyncGatewaysCommand extends Command
 
     private function syncDatabaseToConfig(string $code): void
     {
-        $gateway = \Kreetancraft\PaymentGateway\Models\Gateway::where('code', $code)->first();
+        $gateway = Gateway::where('code', $code)->first();
 
-        if (!$gateway) {
+        if (! $gateway) {
             $this->warn("Gateway [{$code}] not found in database.");
+
             return;
         }
 
         $this->line("  - Would sync [{$code}] to config (manual step required)");
-        $this->warn("  Config file sync not fully implemented. Manual edit required.");
+        $this->warn('  Config file sync not fully implemented. Manual edit required.');
     }
 }

@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Kreetancraft\PaymentGateway\Contracts;
 
 use Kreetancraft\PaymentGateway\Data\PaymentResult;

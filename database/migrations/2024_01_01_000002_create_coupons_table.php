@@ -17,7 +17,7 @@ return new class extends Migration
 
             // Discount type and value
             $table->enum('type', [
-                'percentage', 'fixed', 'buy_x_get_y', 'tiered', 'free_shipping'
+                'percentage', 'fixed', 'buy_x_get_y', 'tiered', 'free_shipping',
             ])->default('percentage');
             $table->unsignedInteger('value')->default(0);
             $table->unsignedInteger('max_discount_amount')->nullable();

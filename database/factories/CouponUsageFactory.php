@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace Kreetancraft\PaymentGateway\Database\Factories;
 
 use Illuminate\Database\Eloquent\Factories\Factory;
-use Kreetancraft\PaymentGateway\Models\CouponUsage;
 use Kreetancraft\PaymentGateway\Models\Coupon;
+use Kreetancraft\PaymentGateway\Models\CouponUsage;
 
 /**
  * @extends Factory<CouponUsage>

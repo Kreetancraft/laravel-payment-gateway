@@ -5,8 +5,9 @@ declare(strict_types=1);
 namespace Kreetancraft\PaymentGateway\Database\Seeders;
 
 use Illuminate\Database\Seeder;
+use Kreetancraft\PaymentGateway\Gateways\HimalayanBankGateway;
+use Kreetancraft\PaymentGateway\Gateways\StripeGateway;
 use Kreetancraft\PaymentGateway\Models\Gateway;
-use Illuminate\Support\Facades\Crypt;
 
 class GatewaySeeder extends Seeder
 {
@@ -19,7 +20,7 @@ class GatewaySeeder extends Seeder
                 'label' => 'Pay with Stripe',
                 'icon' => 'https://js.stripe.com/v3/stripe-logo.svg',
                 'enabled' => true,
-                'class' => \Kreetancraft\PaymentGateway\Gateways\StripeGateway::class,
+                'class' => StripeGateway::class,
                 'currencies' => ['USD', 'EUR', 'GBP', 'INR', 'NPR', 'AUD', 'CAD'],
                 'capabilities' => ['charge', 'refund', 'webhook', 'verify'],
                 'checkout_redirect' => false,
@@ -44,7 +45,7 @@ class GatewaySeeder extends Seeder
                         'key' => 'webhook_secret',
                         'label' => 'Webhook Secret',
                         'type' => 'password',
-                        'required' => true,
+                        'required' => false,
                         'description' => 'Stripe Webhook Signing Secret (whsec_...)',
                     ],
                 ],
@@ -63,7 +64,7 @@ class GatewaySeeder extends Seeder
                 'label' => 'Himalayan Bank (2C2P PACO)',
                 'icon' => 'https://www.himalayanbank.com/themes/himalayan/assets/ico/hbl-icon.png',
                 'enabled' => false,
-                'class' => \Kreetancraft\PaymentGateway\Gateways\HimalayanBankGateway::class,
+                'class' => HimalayanBankGateway::class,
                 'currencies' => ['NPR', 'USD', 'THB'],
                 'capabilities' => ['charge', 'refund', 'webhook', 'verify'],
                 'checkout_redirect' => true,
@@ -75,7 +76,7 @@ class GatewaySeeder extends Seeder
                         'label' => 'Office ID',
                         'type' => 'text',
                         'required' => true,
-                        'description' => 'Office ID provided by Himalayan Bank (e.g., 9104137120)',
+                        'description' => 'Office ID provided by Himalayan Bank (e.g. 9104137120)',
                     ],
                     [
                         'key' => 'api_key',
@@ -92,39 +93,39 @@ class GatewaySeeder extends Seeder
                         'description' => 'Encryption Key ID provided by Himalayan Bank',
                     ],
                     [
-                        'key' => 'merchant_signing_key_path',
-                        'label' => 'Merchant Signing Key Path',
-                        'type' => 'file',
+                        'key' => 'merchant_signing_key',
+                        'label' => 'Merchant Signing Key (PEM)',
+                        'type' => 'textarea',
                         'required' => true,
-                        'description' => 'Path to merchant signing private key (PKCS#8 RSA private key)',
+                        'description' => 'Paste PKCS#8 RSA private key PEM (stored encrypted in database)',
                     ],
                     [
-                        'key' => 'merchant_decryption_key_path',
-                        'label' => 'Merchant Decryption Key Path',
-                        'type' => 'file',
+                        'key' => 'merchant_decryption_key',
+                        'label' => 'Merchant Decryption Key (PEM)',
+                        'type' => 'textarea',
                         'required' => true,
-                        'description' => 'Path to merchant decryption private key (PKCS#8 RSA private key)',
+                        'description' => 'Paste PKCS#8 RSA private key PEM (stored encrypted in database)',
                     ],
                     [
-                        'key' => 'paco_encryption_public_key_path',
-                        'label' => 'PACO Encryption Public Key Path',
-                        'type' => 'file',
+                        'key' => 'paco_encryption_public_key',
+                        'label' => 'PACO Encryption Public Key (PEM)',
+                        'type' => 'textarea',
                         'required' => true,
-                        'description' => 'Path to PACO encryption public key (RSA-OAEP)',
+                        'description' => 'Paste RSA-OAEP public key PEM (stored encrypted in database)',
                     ],
                     [
-                        'key' => 'paco_signing_public_key_path',
-                        'label' => 'PACO Signing Public Key Path',
-                        'type' => 'file',
+                        'key' => 'paco_signing_public_key',
+                        'label' => 'PACO Signing Public Key (PEM)',
+                        'type' => 'textarea',
                         'required' => true,
-                        'description' => 'Path to PACO signing public key (PS256)',
+                        'description' => 'Paste PS256 public key PEM (stored encrypted in database)',
                     ],
                     [
                         'key' => 'environment',
                         'label' => 'Environment',
                         'type' => 'select',
                         'options' => [
-                            'demo' => 'UAT/Sandbox',
+                            'demo' => 'UAT / Sandbox',
                             'production' => 'Production',
                         ],
                         'default' => 'demo',
@@ -146,10 +147,10 @@ class GatewaySeeder extends Seeder
                     'office_id' => null,
                     'api_key' => null,
                     'encryption_key_id' => null,
-                    'merchant_signing_key_path' => null,
-                    'merchant_decryption_key_path' => null,
-                    'paco_encryption_public_key_path' => null,
-                    'paco_signing_public_key_path' => null,
+                    'merchant_signing_key' => null,
+                    'merchant_decryption_key' => null,
+                    'paco_encryption_public_key' => null,
+                    'paco_signing_public_key' => null,
                     'environment' => 'demo',
                     'currencies' => ['NPR', 'USD'],
                 ],

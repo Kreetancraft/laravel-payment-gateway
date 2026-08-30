@@ -5,20 +5,11 @@ declare(strict_types=1);
 namespace Kreetancraft\PaymentGateway\Services;
 
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Collection;
+use Kreetancraft\PaymentGateway\Contracts\GatewayResolver;
 use Kreetancraft\PaymentGateway\Models\Coupon;
 use Kreetancraft\PaymentGateway\Models\CouponUsage;
-use Kreetancraft\PaymentGateway\Models\CouponUsage;
-use Kreetancraft\PaymentGateway\Models\Payment;
-use Kreetancraft\PaymentGateway\Contracts\PaymentGateway;
-use Kreetancraft\PaymentGateway\Contracts\GatewayResolver;
-use Kreetancraft\PaymentGateway\Data\PaymentResult;
-use Kreetancraft\PaymentGateway\Data\RefundResult;
-use Kreetancraft\PaymentGateway\Data\VerificationResult;
-use Kreetancraft\PaymentGateway\Data\WebhookResult;
-use Kreetancraft\PaymentGateway\Contracts\GatewayResolver;
+use Kreetancraft\PaymentGateway\Support\CouponStacker;
 use Lorisleiva\Actions\Concerns\AsAction;
-use Illuminate\Support\Facades\DB;
 
 class CouponService
 {
@@ -52,7 +43,7 @@ class CouponService
         $coupon = Coupon::where('code', $code)->firstOrFail();
 
         $validation = $this->validate($code, $userId, $amountCents, $currency);
-        
+
         if (! $validation['valid']) {
             return [
                 'success' => false,
@@ -61,10 +52,10 @@ class CouponService
             ];
         }
 
-        $coupon = Coupon::where('code', $code)->firstOrFail();
+        $isFreeShipping = (bool) $coupon->is_free_shipping || $coupon->type === 'free_shipping';
         $discountCents = $coupon->calculateDiscount($amountCents);
 
-        if ($discountCents <= 0) {
+        if ($discountCents <= 0 && ! $isFreeShipping) {
             return [
                 'success' => false,
                 'message' => 'Coupon does not apply to this amount.',
@@ -78,9 +69,10 @@ class CouponService
             'success' => true,
             'discount_cents' => $discountCents,
             'final_amount_cents' => $finalAmountCents,
+            'has_free_shipping' => $isFreeShipping,
             'coupon' => [
                 'code' => $coupon->code,
-                'label' => $coupon->label,
+                'label' => $coupon->name ?? $coupon->label ?? $coupon->code,
                 'type' => $coupon->type,
                 'value' => $coupon->value,
             ],
@@ -97,7 +89,7 @@ class CouponService
     {
         $coupon = Coupon::where('code', $code)->first();
 
-        if (!$coupon) {
+        if (! $coupon) {
             return [
                 'valid' => false,
                 'message' => 'Coupon code not found.',
@@ -105,7 +97,15 @@ class CouponService
             ];
         }
 
-        if (!$coupon->is_active) {
+        if ($coupon->expires_at && $coupon->expires_at->isPast()) {
+            return [
+                'valid' => false,
+                'message' => 'This coupon has expired.',
+                'code' => 'COUPON_EXPIRED',
+            ];
+        }
+
+        if (! $coupon->is_active) {
             return [
                 'valid' => false,
                 'message' => 'This coupon is not active.',
@@ -118,14 +118,6 @@ class CouponService
                 'valid' => false,
                 'message' => 'This coupon is not yet valid.',
                 'code' => 'COUPON_NOT_STARTED',
-            ];
-        }
-
-        if ($coupon->expires_at && $coupon->expires_at->isPast()) {
-            return [
-                'valid' => false,
-                'message' => 'This coupon has expired.',
-                'code' => 'COUPON_EXPIRED',
             ];
         }
 
@@ -150,7 +142,7 @@ class CouponService
                 ];
             }
 
-            if ($coupon->user_ids && !in_array($userId, $coupon->user_ids)) {
+            if ($coupon->user_ids && ! in_array($userId, $coupon->user_ids)) {
                 return [
                     'valid' => false,
                     'message' => 'This coupon is not available for your account.',
@@ -162,7 +154,7 @@ class CouponService
         if ($amountCents < $coupon->min_order_amount) {
             return [
                 'valid' => false,
-                'message' => "Minimum order amount is {$coupon->min_order_amount / 100}.",
+                'message' => 'Minimum order amount is '.number_format(($coupon->min_order_amount ?? 0) / 100, 2).'.',
                 'code' => 'MIN_ORDER_NOT_MET',
             ];
         }
@@ -182,7 +174,7 @@ class CouponService
     {
         return DB::transaction(function () use ($coupon, $userId, $orderType, $orderId, $amountDiscountedCents, $currency, $metadata) {
             $coupon->increment('usage_count');
-            
+
             $usage = CouponUsage::recordUsage(
                 couponId: $coupon->id,
                 userId: $userId,
@@ -199,13 +191,10 @@ class CouponService
 
     public function applyMultiple(array $codes, ?int $userId, int $amountCents, string $currency, array $context = []): array
     {
-        $coupons = Coupon::whereIn('code', $codes)->get();
-        
-        $validCoupons = $coupons->filter(fn ($c) => $c->canApply($userId, $amountCents, $currency))
-            ->sortByDesc(fn ($c) => $c->calculateDiscount($amountCents))
-            ->values();
+        $stacker = new CouponStacker;
+        $result = $stacker->apply($codes, $amountCents, $currency);
 
-        if ($validCoupons->isEmpty()) {
+        if ($result['discount_cents'] === 0 && ! $result['has_free_shipping']) {
             return [
                 'success' => false,
                 'message' => 'No valid coupons provided.',
@@ -213,110 +202,12 @@ class CouponService
             ];
         }
 
-        // Smart stacking logic (from binafy)
-        return $this->applyStacking($validCoupons, $amountCents, $currency);
-    }
-
-    private function applyStacking(Collection $coupons, int $amountCents, string $currency): array
-    {
-        $stackable = $coupons->filter(fn ($c) => $c->is_stackable);
-        $nonStackable = $coupons->filter(fn ($c) => !$c->is_stackable);
-        $freeShipping = $coupons->filter(fn ($c) => $c->is_free_shipping);
-        $monetary = $coupons->filter(fn ($c) => !$c->is_free_shipping);
-
-        // Free shipping always applies on top
-        $freeShipping = $coupons->filter(fn ($c) => $c->is_free_shipping);
-        $monetaryCoupons = $coupons->filter(fn ($c) => !$c->is_free_shipping);
-
-        $hasFreeShipping = $freeShipping->isNotEmpty();
-
-        // Find best combination of monetary coupons
-        $bestCombo = $this->findBestCombination($monetaryCoupons, $amountCents);
-
-        $discountCents = $bestCombo['discount'];
-        $appliedCoupons = $bestCombo['coupons'];
-
-        // Free shipping always stacks on top
-        $hasFreeShipping = $freeShipping->isNotEmpty();
-
         return [
             'success' => true,
-            'discount_cents' => $discountCents,
-            'final_amount_cents' => max(0, $amountCents - $discountCents),
-            'applied_coupons' => $appliedCoupons,
-            'has_free_shipping' => $hasFreeShipping,
-        ];
-    }
-
-    private function findBestCombination(Collection $coupons, int $amountCents): array
-    {
-        $couponsArray = $coupons->values()->all();
-        $count = count($couponsArray);
-
-        if ($count <= 8) {
-            return $this->bruteForceBestCombo($couponsArray, $amountCents);
-        }
-
-        return $this->greedyBestCombo($coupons, $amountCents);
-    }
-
-    private function bruteForceBestCombo(array $coupons, int $amountCents): array
-    {
-        $bestDiscount = 0;
-        $bestCombo = [];
-
-        $count = count($coupons);
-        
-        for ($i = 1; $i < (1 << $count); $i++) {
-            $combo = [];
-            $discount = 0;
-            $remaining = $amountCents;
-
-            for ($j = 0; $j < $count; $j++) {
-                if ($i & (1 << $j)) {
-                    $coupon = $coupons[$j];
-                    if ($coupon->canApply(null, $remaining, '')) {
-                        $couponDiscount = $coupon->calculateDiscount($remaining);
-                        $combo[] = $coupons[$j];
-                        $discount += $couponDiscount;
-                        $remaining -= $couponDiscount;
-                    }
-                }
-            }
-
-            if ($discount > $bestDiscount) {
-                $bestDiscount = $discount;
-                $bestCombo = $combo;
-            }
-        }
-
-        return [
-            'discount' => $bestDiscount,
-            'coupons' => collect($bestCombo),
-        ];
-    }
-
-    private function greedyBestCombo(Collection $coupons, int $amountCents): array
-    {
-        // Sort by discount efficiency (discount per cent of value)
-        $sorted = $coupons->sortByDesc(fn ($c) => $c->calculateDiscount($amountCents) / max(1, $c->value));
-        
-        $discount = 0;
-        $combo = [];
-        $remaining = $amountCents;
-
-        foreach ($sorted as $coupon) {
-            if ($coupon->canApply(null, $remaining, '')) {
-                $couponDiscount = $coupon->calculateDiscount($remaining);
-                $discount += $couponDiscount;
-                $remaining -= $couponDiscount;
-                $combo[] = $coupon;
-            }
-        }
-
-        return [
-            'discount' => $discount,
-            'coupons' => $combo,
+            'discount_cents' => $result['discount_cents'],
+            'final_amount_cents' => $result['final_amount_cents'],
+            'applied_coupons' => $result['applied_coupons'],
+            'has_free_shipping' => $result['has_free_shipping'],
         ];
     }
 }

@@ -23,12 +23,12 @@ class PaymentFactory extends Factory
 
         return [
             'uuid' => (string) Str::uuid(),
-            'reference' => 'PMT-' . now()->format('ymd') . '-' . Str::upper(Str::random(6)),
+            'reference' => 'PMT-'.now()->format('ymd').'-'.Str::upper(Str::random(6)),
             'user_id' => null,
             'amount_cents' => $amountCents,
             'currency' => $currency,
             'gateway' => $gateway,
-            'gateway_reference' => $gateway === 'stripe' ? 'pi_' . Str::random(24) : 'ORD-' . Str::upper(Str::random(8)),
+            'gateway_reference' => $gateway === 'stripe' ? 'pi_'.Str::random(24) : 'ORD-'.Str::upper(Str::random(8)),
             'status' => $this->faker->randomElement(['pending', 'succeeded', 'failed', 'canceled']),
             'refunded_amount_cents' => 0,
             'idempotency_key' => hash('sha256', (string) Str::uuid()),
@@ -60,8 +60,8 @@ class PaymentFactory extends Factory
             'status' => 'succeeded',
             'paid_at' => now(),
             'gateway_reference' => $attributes['gateway'] === 'stripe'
-                ? 'pi_' . Str::random(24)
-                : 'ORD-' . Str::upper(Str::random(8)),
+                ? 'pi_'.Str::random(24)
+                : 'ORD-'.Str::upper(Str::random(8)),
         ]);
     }
 

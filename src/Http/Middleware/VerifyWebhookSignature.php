@@ -6,6 +6,7 @@ namespace Kreetancraft\PaymentGateway\Http\Middleware;
 
 use Closure;
 use Illuminate\Http\Request;
+use Stripe\Webhook;
 use Symfony\Component\HttpFoundation\Response;
 
 class VerifyWebhookSignature
@@ -57,11 +58,11 @@ class VerifyWebhookSignature
             }
 
             try {
-                \Stripe\Webhook::constructEvent($payload, (string) $signature, $secret);
+                Webhook::constructEvent($payload, (string) $signature, $secret);
             } catch (\Throwable $exception) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Webhook signature verification failed: ' . $exception->getMessage(),
+                    'message' => 'Webhook signature verification failed: '.$exception->getMessage(),
                 ], 400);
             }
 

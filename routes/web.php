@@ -3,21 +3,28 @@
 declare(strict_types=1);
 
 use Illuminate\Support\Facades\Route;
-use Kreetancraft\PaymentGateway\Http\Controllers\PaymentController;
-use Kreetancraft\PaymentGateway\Http\Controllers\WebhookController;
-use Kreetancraft\PaymentGateway\Livewire\Checkout;
-use Kreetancraft\PaymentGateway\Livewire\ManageGateways;
-use Kreetancraft\PaymentGateway\Livewire\ManageCoupons;
 use Kreetancraft\PaymentGateway\Http\Controllers\CouponController;
+use Kreetancraft\PaymentGateway\Http\Controllers\PaymentController;
+use Kreetancraft\PaymentGateway\Livewire\Checkout;
+use Kreetancraft\PaymentGateway\Livewire\ManageCoupons;
+use Kreetancraft\PaymentGateway\Livewire\ManageGateways;
 
-$prefix = config('payment-gateway.routes.prefix', 'payment');
-$middleware = config('payment-gateway.routes.middleware', ['web']);
-$names = config('payment-gateway.routes.names', []);
+$prefix = (string) config('payment-gateway.routes.prefix', 'payment');
+$middleware = (array) config('payment-gateway.routes.middleware', ['web']);
+$names = (array) config('payment-gateway.routes.names', []);
 
 Route::prefix($prefix)
     ->middleware($middleware)
     ->group(function () use ($names): void {
-        Route::get('checkout/{gateway?}', \Kreetancraft\PaymentGateway\Livewire\Checkout::class)
+        // Admin Management Screens (Livewire + Flux UI)
+        Route::get('gateways', ManageGateways::class)
+            ->name($names['gateways'] ?? 'payment.gateways');
+
+        Route::get('manage-coupons', ManageCoupons::class)
+            ->name($names['coupons'] ?? 'payment.coupons');
+
+        // Hosted Checkout Flow
+        Route::get('checkout/{gateway?}', Checkout::class)
             ->name($names['checkout'] ?? 'payment.checkout');
 
         Route::get('choose', [PaymentController::class, 'choose'])
@@ -29,8 +36,8 @@ Route::prefix($prefix)
         Route::get('cancel', [PaymentController::class, 'cancel'])
             ->name($names['cancel'] ?? 'payment.cancel');
 
-        // Coupon routes
-        Route::prefix('coupons')->name('coupons.')->group(function () use ($names): void {
+        // Coupon actions
+        Route::prefix('coupons')->name('coupons.')->group(function (): void {
             Route::get('/', [CouponController::class, 'listCoupons'])
                 ->name('list');
             Route::post('validate', [CouponController::class, 'validateCoupon'])

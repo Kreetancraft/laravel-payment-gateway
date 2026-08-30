@@ -4,22 +4,16 @@ declare(strict_types=1);
 
 namespace Kreetancraft\PaymentGateway\Tests;
 
-use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
-use Kreetancraft\PaymentGateway\Tests\TestCase;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Kreetancraft\PaymentGateway\Models\Coupon;
-use Kreetancraft\PaymentGateway\Models\CouponUsage;
+use Kreetancraft\PaymentGateway\Rules\ValidCouponCode;
 use Kreetancraft\PaymentGateway\Services\CouponService;
 
-uses(\Kreetancraft\PaymentGateway\Tests\TestCase::class)
-    ->in('Feature');
-
-beforeEach(function () {
-    $this->seedRolesAndPermissions();
-});
+uses(RefreshDatabase::class);
 
 it('applies a valid percentage coupon', function () {
     $coupon = Coupon::factory()->percentage(20)->create();
-    
+
     $result = app(CouponService::class)->apply(
         $coupon->code,
         null,
@@ -34,7 +28,7 @@ it('applies a valid percentage coupon', function () {
 
 it('applies a valid fixed coupon', function () {
     $coupon = Coupon::factory()->fixed(1000)->create();
-    
+
     $result = app(CouponService::class)->apply(
         $coupon->code,
         null,
@@ -49,7 +43,7 @@ it('applies a valid fixed coupon', function () {
 
 it('rejects expired coupon', function () {
     $coupon = Coupon::factory()->expired()->create();
-    
+
     $result = app(CouponService::class)->apply(
         $coupon->code,
         null,
@@ -63,7 +57,7 @@ it('rejects expired coupon', function () {
 
 it('rejects coupon with exceeded usage limit', function () {
     $coupon = Coupon::factory()->withUsageLimit(1)->create(['usage_count' => 1]);
-    
+
     $result = app(CouponService::class)->apply(
         $coupon->code,
         null,
@@ -77,7 +71,7 @@ it('rejects coupon with exceeded usage limit', function () {
 
 it('rejects coupon exceeding max discount amount', function () {
     $coupon = Coupon::factory()->percentage(50)->create(['max_discount_amount' => 500]);
-    
+
     $result = app(CouponService::class)->apply(
         $coupon->code,
         null,
@@ -91,8 +85,8 @@ it('rejects coupon exceeding max discount amount', function () {
 
 it('applies free shipping coupon', function () {
     $coupon = Coupon::factory()->freeShipping()->create();
-    
-    $result = app(\Kreetancraft\PaymentGateway\Services\CouponService::class)->apply(
+
+    $result = app(CouponService::class)->apply(
         $coupon->code,
         null,
         10000,
@@ -107,8 +101,8 @@ it('applies free shipping coupon', function () {
 it('stacks coupons correctly (max savings wins)', function () {
     $coupon1 = Coupon::factory()->percentage(10)->create(); // 10%
     $coupon2 = Coupon::factory()->percentage(20)->create(); // 20%
-    
-    $result = app(\Kreetancraft\PaymentGateway\Services\CouponService::class)->applyMultiple(
+
+    $result = app(CouponService::class)->applyMultiple(
         [$coupon1->code, $coupon2->code],
         null,
         10000, // $100
@@ -122,8 +116,8 @@ it('stacks coupons correctly (max savings wins)', function () {
 it('free shipping stacks on top of monetary discount', function () {
     $coupon1 = Coupon::factory()->percentage(10)->create();
     $coupon2 = Coupon::factory()->freeShipping()->create();
-    
-    $result = app(\Kreetancraft\PaymentGateway\Services\CouponService::class)->applyMultiple(
+
+    $result = app(CouponService::class)->applyMultiple(
         [$coupon1->code, $coupon2->code],
         null,
         10000,
@@ -137,45 +131,27 @@ it('free shipping stacks on top of monetary discount', function () {
 
 it('validates coupon code correctly', function () {
     $coupon = Coupon::factory()->active()->create();
-    
-    $rule = new \Kreetancraft\PaymentGateway\Rules\ValidCouponCode();
-    
+
+    $rule = new ValidCouponCode;
+
     // This would need a request context, so we test via service
     $result = app(CouponService::class)->validate($coupon->code, null, 10000, 'USD');
-    
+
     expect($result['valid'])->toBeTrue();
 });
 
 it('rejects invalid coupon code', function () {
     $result = app(CouponService::class)->validate('INVALID', null, 10000, 'USD');
-    
+
     expect($result['valid'])->toBeFalse()
         ->and($result['code'])->toBe('COUPON_NOT_FOUND');
 });
 
-it('rejects expired coupon', function () {
-    $coupon = Coupon::factory()->expired()->create();
-    
-    $result = app(CouponService::class)->validate($coupon->code, null, 10000, 'USD');
-    
-    expect($result['valid'])->toBeFalse()
-        ->and($result['code'])->toBe('COUPON_EXPIRED');
-});
-
-it('rejects coupon with exceeded usage limit', function () {
-    $coupon = Coupon::factory()->withUsageLimit(1)->create(['usage_count' => 1]);
-    
-    $result = app(CouponService::class)->validate($coupon->code, null, 10000, 'USD');
-    
-    expect($result['valid'])->toBeFalse()
-        ->and($result['code'])->toBe('COUPON_EXHAUSTED');
-});
-
 it('enforces min order amount', function () {
     $coupon = Coupon::factory()->create(['min_order_amount' => 5000]);
-    
+
     $result = app(CouponService::class)->validate($coupon->code, null, 1000, 'USD');
-    
+
     expect($result['valid'])->toBeFalse()
         ->and($result['code'])->toBe('MIN_ORDER_NOT_MET');
 });

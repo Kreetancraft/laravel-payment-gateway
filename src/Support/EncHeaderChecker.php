@@ -17,7 +17,7 @@ final readonly class EncHeaderChecker implements HeaderChecker
     private const HEADER_NAME = 'enc';
 
     /**
-     * @param list<string> $supportedAlgorithms
+     * @param  list<string>  $supportedAlgorithms
      */
     public function __construct(
         private array $supportedAlgorithms,

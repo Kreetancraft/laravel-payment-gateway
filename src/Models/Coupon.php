@@ -4,11 +4,12 @@ declare(strict_types=1);
 
 namespace Kreetancraft\PaymentGateway\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
-use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Kreetancraft\PaymentGateway\Database\Factories\CouponFactory;
 
@@ -24,52 +25,53 @@ class Coupon extends Model
 
     // All fields that can be mass assigned
     protected $fillable = [
+        'uuid',
         'code',           // Unique coupon code (e.g., "SAVE20")
         'name',           // Display name (e.g., "20% Off")
         'description',    // Optional description
-        
+
         // Discount type and value
         'type',              // percentage, fixed, buy_x_get_y, tiered, free_shipping
         'value',             // Percentage (20) or fixed amount in cents (2000 = $20)
         'max_discount_amount', // Cap for percentage discounts (in cents)
         'min_order_amount',    // Minimum order amount in cents
-        
+
         // Usage limits
         'usage_limit',          // Total times this coupon can be used
         'usage_limit_per_user', // Max uses per user
         'user_ids',             // Specific user IDs allowed (JSON array)
         'usage_count',          // How many times used
-        
+
         // Validity dates
         'starts_at',     // When coupon becomes valid
         'expires_at',    // When coupon expires
-        'usage_count',   // How many times used
         'is_active',     // Is this coupon active?
-        
+
         // Advanced features
-        'max_discount_amount',  // Cap for percentage discounts
-        'min_order_amount',     // Minimum order amount in cents
         'conditions',      // JSON: buy_x_get_y, tiered, time windows, etc.
         'is_stackable',    // Can stack with other coupons
         'is_free_shipping', // Free shipping coupon
     ];
 
     // Automatic casting for proper types
-    protected $casts = [
-        'value' => 'integer',
-        'max_discount_amount' => 'integer',
-        'min_order_amount' => 'integer',
-        'usage_limit' => 'integer',
-        'usage_limit_per_user' => 'integer',
-        'user_ids' => 'array',        // JSON array of user IDs
-        'usage_count' => 'integer',
-        'is_active' => 'boolean',
-        'starts_at' => 'datetime',
-        'expires_at' => 'datetime',
-        'conditions' => 'array',      // JSON conditions
-        'is_stackable' => 'boolean',
-        'is_free_shipping' => 'boolean',
-    ];
+    protected function casts(): array
+    {
+        return [
+            'value' => 'integer',
+            'max_discount_amount' => 'integer',
+            'min_order_amount' => 'integer',
+            'usage_limit' => 'integer',
+            'usage_limit_per_user' => 'integer',
+            'user_ids' => 'array',        // JSON array of user IDs
+            'usage_count' => 'integer',
+            'is_active' => 'boolean',
+            'starts_at' => 'datetime',
+            'expires_at' => 'datetime',
+            'conditions' => 'array',      // JSON conditions
+            'is_stackable' => 'boolean',
+            'is_free_shipping' => 'boolean',
+        ];
+    }
 
     // Use our custom factory
     protected static function newFactory(): CouponFactory
@@ -77,12 +79,21 @@ class Coupon extends Model
         return CouponFactory::new();
     }
 
+    protected static function booted(): void
+    {
+        static::creating(function (Coupon $coupon): void {
+            if (blank($coupon->uuid)) {
+                $coupon->uuid = (string) Str::uuid();
+            }
+        });
+    }
+
     // ============================================
     // SCOPES - Easy query filters
     // ============================================
 
     // Only active coupons within their date range
-    public function scopeActive($query)
+    public function scopeActive(Builder $query): Builder
     {
         return $query->where('is_active', true)
             ->where(function ($q) {
@@ -96,7 +107,7 @@ class Coupon extends Model
     }
 
     // Valid coupons (active + within dates + usage limits + user eligibility)
-    public function scopeValid($query, ?int $userId = null): self
+    public function scopeValid(Builder $query, ?int $userId = null): Builder
     {
         return $query->active()
             ->where(function ($q) {
@@ -106,14 +117,14 @@ class Coupon extends Model
     }
 
     // Expired coupons
-    public function scopeExpired($query): self
+    public function scopeExpired(Builder $query): Builder
     {
         return $query->whereNotNull('expires_at')
             ->where('expires_at', '<=', now());
     }
 
     // Coupons for a specific user (via user_ids whitelist)
-    public function scopeForUser($query, int $userId): self
+    public function scopeForUser(Builder $query, int $userId): Builder
     {
         return $query->where(function ($q) use ($userId) {
             $q->whereNull('user_ids')
@@ -122,7 +133,7 @@ class Coupon extends Model
     }
 
     // Coupons valid for a specific currency
-    public function scopeForCurrency($query, string $currency): self
+    public function scopeForCurrency(Builder $query, string $currency): Builder
     {
         return $query->where(function ($q) use ($currency) {
             $q->whereJsonDoesntContain('conditions->currencies', $currency)
@@ -170,7 +181,7 @@ class Coupon extends Model
 
         // 5. Check user whitelist
         if ($userId !== null && $this->user_ids !== null) {
-            if (!in_array($userId, $this->user_ids)) {
+            if (! in_array($userId, $this->user_ids)) {
                 return false;
             }
         }
@@ -182,7 +193,7 @@ class Coupon extends Model
 
         // 6. Check currency restrictions
         if ($currency && $this->conditions && isset($this->conditions['currencies'])) {
-            if (!in_array(strtoupper($currency), array_map('strtoupper', $this->conditions['currencies']))) {
+            if (! in_array(strtoupper($currency), array_map('strtoupper', $this->conditions['currencies']))) {
                 return false;
             }
         }
@@ -194,6 +205,21 @@ class Coupon extends Model
     public function canApply(?int $userId = null, ?float $amount = null, ?string $currency = null): bool
     {
         return $this->isValid($userId, $amount, $currency);
+    }
+
+    public function supportsCurrency(?string $currency): bool
+    {
+        if (blank($currency)) {
+            return true;
+        }
+
+        $currencies = $this->conditions['currencies'] ?? null;
+
+        if (empty($currencies)) {
+            return true;
+        }
+
+        return in_array(strtoupper($currency), array_map('strtoupper', (array) $currencies), true);
     }
 
     // ============================================
@@ -212,7 +238,7 @@ class Coupon extends Model
             case 'percentage':
                 // Calculate percentage discount
                 $discount = (int) round($amountCents * $this->value / 100);
-                
+
                 // Cap at max discount amount if set
                 if ($this->max_discount_amount && $discount > $this->max_discount_amount) {
                     $discount = $this->max_discount_amount;
@@ -248,7 +274,8 @@ class Coupon extends Model
 
     /**
      * Generate a random coupon code
-     * @param string $prefix Optional prefix like 'SAVE' or 'WELCOME'
+     *
+     * @param  string  $prefix  Optional prefix like 'SAVE' or 'WELCOME'
      * @return string Like "SAVE-ABC123XY"
      */
     public static function generateCode(string $prefix = ''): string
@@ -256,7 +283,7 @@ class Coupon extends Model
         $chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // No confusing chars
         $length = 8;
         $code = $prefix;
-        
+
         for ($i = 0; $i < $length; $i++) {
             $code .= $chars[random_int(0, strlen($chars) - 1)];
         }

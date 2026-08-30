@@ -18,7 +18,7 @@ class VerifyPaymentAction
     ) {}
 
     /**
-     * @param array<string, mixed> $data
+     * @param  array<string, mixed>  $data
      */
     public function handle(array $data): VerificationResult
     {

@@ -5,11 +5,11 @@ declare(strict_types=1);
 namespace Kreetancraft\PaymentGateway\Http\Controllers;
 
 use Illuminate\Http\JsonResponse;
-use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
+use Kreetancraft\PaymentGateway\Http\Requests\ApplyCouponRequest;
+use Kreetancraft\PaymentGateway\Http\Requests\ValidateCouponRequest;
 use Kreetancraft\PaymentGateway\Models\Coupon;
 use Kreetancraft\PaymentGateway\Services\CouponService;
-use Kreetancraft\PaymentGateway\Rules\ValidCouponCode;
 
 class CouponController extends Controller
 {
@@ -17,17 +17,13 @@ class CouponController extends Controller
         private readonly CouponService $couponService,
     ) {}
 
-    public function validateCoupon(Request $request): \Illuminate\Http\JsonResponse
+    public function validateCoupon(ValidateCouponRequest $request): JsonResponse
     {
-        $request->validate([
-            'code' => ['required', 'string', new ValidCouponCode()],
-            'amount_cents' => ['nullable', 'integer', 'min:1'],
-            'currency' => ['nullable', 'string', 'size:3'],
-        );
+        $validated = $request->validated();
 
-        $coupon = Coupon::where('code', $request->string('code'))->first();
+        $coupon = Coupon::where('code', $validated['code'])->first();
 
-        if (!$coupon) {
+        if (! $coupon) {
             return response()->json([
                 'valid' => false,
                 'message' => 'Invalid coupon code.',
@@ -36,15 +32,15 @@ class CouponController extends Controller
 
         $valid = $coupon->isValid(
             auth()->id(),
-            $request->integer('amount_cents'),
-            $request->string('currency', 'USD')
+            isset($validated['amount_cents']) ? (int) $validated['amount_cents'] : null,
+            (string) ($validated['currency'] ?? 'USD')
         );
 
         return response()->json([
             'valid' => $valid,
             'coupon' => $valid ? [
                 'code' => $coupon->code,
-                'label' => $coupon->label,
+                'name' => $coupon->name,
                 'type' => $coupon->type,
                 'value' => $coupon->value,
             ] : null,
@@ -52,19 +48,15 @@ class CouponController extends Controller
         ]);
     }
 
-    public function applyCoupon(Request $request): \Illuminate\Http\JsonResponse
+    public function applyCoupon(ApplyCouponRequest $request): JsonResponse
     {
-        $request->validate([
-            'code' => ['required', 'string', new \Kreetancraft\PaymentGateway\Rules\ValidCouponCode()],
-            'amount_cents' => ['required', 'integer', 'min:1'],
-            'currency' => ['required', 'string', 'size:3'],
-        );
+        $validated = $request->validated();
 
-        $result = app(\Kreetancraft\PaymentGateway\Services\CouponService::class)->apply(
-            $request->string('code'),
+        $result = $this->couponService->apply(
+            (string) $validated['code'],
             auth()->id(),
-            $request->integer('amount_cents'),
-            $request->string('currency')
+            (int) $validated['amount_cents'],
+            (string) $validated['currency']
         );
 
         if (! $result['success']) {
@@ -84,21 +76,14 @@ class CouponController extends Controller
         ]);
     }
 
-    public function listCoupons(): \Illuminate\Http\JsonResponse
+    public function listCoupons(): JsonResponse
     {
-        $coupons = Coupon::where('is_active', true)
-            ->where(function ($q) {
-                $q->whereNull('starts_at')
-                    ->orWhere('starts_at', '<=', now());
-            })
-            ->where(function ($q) {
-                $q->whereNull('expires_at')
-                    ->orWhere('expires_at', '>', now());
-            })
+        $coupons = Coupon::query()
+            ->active()
             ->get()
-            ->map(fn ($c) => [
+            ->map(fn (Coupon $c): array => [
                 'code' => $c->code,
-                'label' => $c->label,
+                'name' => $c->name,
                 'type' => $c->type,
                 'value' => $c->value,
                 'max_discount_amount' => $c->max_discount_amount,

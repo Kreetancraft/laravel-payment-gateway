@@ -4,41 +4,42 @@ declare(strict_types=1);
 
 namespace Kreetancraft\PaymentGateway\Policies;
 
-use Illuminate\Auth\Access\HandlesAuthorization;
-use Illuminate\Database\Eloquent\Model;
+use Illuminate\Contracts\Auth\Authenticatable;
 use Kreetancraft\PaymentGateway\Models\Payment;
 
-class PaymentPolicy
+class PaymentPolicy extends PaymentGatewayPolicy
 {
-    use HandlesAuthorization;
+    public const PERMISSION_SUBJECT = 'payment';
 
-    public function viewAny($user): bool
+    public const PERMISSION_EXTRA_METHODS = ['refund'];
+
+    public function viewAny(Authenticatable $user): bool
     {
-        return $user->can('view-payments');
+        return $this->allows($user, 'view');
     }
 
-    public function view($user, Payment $payment): bool
+    public function view(Authenticatable $user, ?Payment $payment = null): bool
     {
-        return $user->can('view-payments');
+        return $this->allows($user, 'view');
     }
 
-    public function create($user): bool
+    public function create(Authenticatable $user): bool
     {
-        return $user->can('create-payments');
+        return $this->allows($user, 'create');
     }
 
-    public function update($user, Payment $payment): bool
+    public function update(Authenticatable $user, ?Payment $payment = null): bool
     {
-        return $user->can('edit-payments');
+        return $this->allows($user, 'update');
     }
 
-    public function refund($user, Payment $payment): bool
+    public function delete(Authenticatable $user, ?Payment $payment = null): bool
     {
-        return $user->can('refund-payments');
+        return $this->allows($user, 'delete');
     }
 
-    public function delete($user, Payment $payment): bool
+    public function refund(Authenticatable $user, ?Payment $payment = null): bool
     {
-        return $user->can('delete-payments');
+        return $this->allows($user, 'refund');
     }
 }

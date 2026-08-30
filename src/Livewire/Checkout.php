@@ -5,12 +5,14 @@ declare(strict_types=1);
 namespace Kreetancraft\PaymentGateway\Livewire;
 
 use Illuminate\Contracts\View\View;
+use Illuminate\Support\Facades\Route;
+use Kreetancraft\PaymentGateway\Actions\ChargePaymentAction;
+use Kreetancraft\PaymentGateway\Contracts\GatewayResolver;
+use Kreetancraft\PaymentGateway\Data\PaymentResult;
+use Kreetancraft\PaymentGateway\Models\Coupon;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Url;
 use Livewire\Component;
-use Kreetancraft\PaymentGateway\Actions\ChargePaymentAction;
-use Kreetancraft\PaymentGateway\Contracts\GatewayResolver;
-use Kreetancraft\PaymentGateway\Models\Coupon;
 
 class Checkout extends Component
 {
@@ -168,6 +170,7 @@ class Checkout extends Component
 
         if ($this->isCouponCodeEmpty()) {
             $this->showError('Please enter a coupon code.');
+
             return;
         }
 
@@ -175,6 +178,7 @@ class Checkout extends Component
 
         if (! $this->isCouponValid($coupon)) {
             $this->showError('Invalid or expired coupon code.');
+
             return;
         }
 
@@ -182,6 +186,7 @@ class Checkout extends Component
 
         if (! $this->isValidAmount($amountCents)) {
             $this->showError('Please enter a valid amount.');
+
             return;
         }
 
@@ -189,6 +194,7 @@ class Checkout extends Component
 
         if (! $coupon->canApply(auth()->id(), $amountCents, $currency)) {
             $this->showError('This coupon cannot be applied to your order.');
+
             return;
         }
 
@@ -196,6 +202,7 @@ class Checkout extends Component
 
         if ($discount <= 0) {
             $this->showError('This coupon does not apply to your order amount.');
+
             return;
         }
 
@@ -237,7 +244,7 @@ class Checkout extends Component
         $this->appliedDiscountCents = $discount;
         $this->hasFreeShipping = $coupon->is_free_shipping;
         $this->couponCode = '';
-        session()->flash('coupon_message', "Coupon {$coupon->code} applied! Discount: " . number_format($discount / 100, 2));
+        session()->flash('coupon_message', "Coupon {$coupon->code} applied! Discount: ".number_format($discount / 100, 2));
     }
 
     public function removeCoupon(): void
@@ -272,6 +279,7 @@ class Checkout extends Component
 
         if (! $this->hasSelectedGateway()) {
             $this->showError('Please select a payment gateway.');
+
             return null;
         }
 
@@ -279,16 +287,19 @@ class Checkout extends Component
 
         if (! $this->isValidAmount($amountCents)) {
             $this->showError('Please enter a valid amount.');
+
             return null;
         }
 
         if (! $this->isValidCurrency()) {
             $this->showError('Currency must be a 3-letter code.');
+
             return null;
         }
 
         if (! $this->isValidEmail()) {
             $this->showError('Please enter a valid email address.');
+
             return null;
         }
 
@@ -296,6 +307,7 @@ class Checkout extends Component
 
         if (! $result->success) {
             $this->showError($result->errorMessage ?? 'Payment failed. Please try again.');
+
             return null;
         }
 
@@ -321,7 +333,7 @@ class Checkout extends Component
         return filter_var($this->customerEmail, FILTER_VALIDATE_EMAIL) !== false;
     }
 
-    private function sendChargeRequest(int $amountCents): \Kreetancraft\PaymentGateway\Data\PaymentResult
+    private function sendChargeRequest(int $amountCents): PaymentResult
     {
         $payload = $this->buildChargePayload($amountCents);
 
@@ -348,10 +360,11 @@ class Checkout extends Component
         ];
     }
 
-    private function handleSuccessfulCharge(\Kreetancraft\PaymentGateway\Data\PaymentResult $result): mixed
+    private function handleSuccessfulCharge(PaymentResult $result): mixed
     {
         if (filled($result->redirectUrl)) {
             $this->isRedirecting = true;
+
             return $this->redirect($result->redirectUrl, navigate: false);
         }
 
@@ -359,7 +372,7 @@ class Checkout extends Component
 
         $successRoute = config('payment-gateway.routes.names.success', 'payment.success');
 
-        if (\Illuminate\Support\Facades\Route::has($successRoute)) {
+        if (Route::has($successRoute)) {
             return $this->redirect(route($successRoute, ['reference' => $result->orderReference]), navigate: true);
         }
 

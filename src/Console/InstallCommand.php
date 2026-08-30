@@ -6,7 +6,6 @@ namespace Kreetancraft\PaymentGateway\Console;
 
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\File;
-use Kreetancraft\PaymentGateway\Models\Gateway;
 
 class InstallCommand extends Command
 {

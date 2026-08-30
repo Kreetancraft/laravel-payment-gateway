@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace Kreetancraft\PaymentGateway\Actions;
 
 use Illuminate\Support\Facades\Validator;
-use Illuminate\Validation\ValidationException;
 use Kreetancraft\PaymentGateway\Contracts\GatewayResolver;
 use Kreetancraft\PaymentGateway\Data\PaymentResult;
+use Kreetancraft\PaymentGateway\Enums\PaymentStatus;
 use Kreetancraft\PaymentGateway\Models\Payment;
 use Lorisleiva\Actions\Concerns\AsAction;
 
@@ -20,7 +20,7 @@ class ChargePaymentAction
     ) {}
 
     /**
-     * @param array<string, mixed> $data
+     * @param  array<string, mixed>  $data
      */
     public function handle(array $data): PaymentResult
     {
@@ -49,7 +49,7 @@ class ChargePaymentAction
         if (blank($gatewayCode)) {
             return PaymentResult::failure(
                 orderReference: '',
-                errorMessage: "No gateway specified and no default gateway configured.",
+                errorMessage: 'No gateway specified and no default gateway configured.',
                 errorCode: 'gateway_missing'
             );
         }
@@ -94,7 +94,7 @@ class ChargePaymentAction
                 'currency' => $currency,
                 'gateway' => $gatewayCode,
                 'gateway_reference' => $result->orderReference ?: null,
-                'status' => 'failed',
+                'status' => PaymentStatus::Failed,
                 'idempotency_key' => $idempotencyKey,
                 'customer_email' => $data['customer_email'] ?? null,
                 'customer_name' => $data['customer_name'] ?? null,
@@ -112,7 +112,7 @@ class ChargePaymentAction
             'currency' => $currency,
             'gateway' => $gatewayCode,
             'gateway_reference' => $result->orderReference,
-            'status' => $result->redirectUrl !== null ? 'pending' : 'succeeded',
+            'status' => $result->redirectUrl !== null ? PaymentStatus::Pending : PaymentStatus::Succeeded,
             'idempotency_key' => $idempotencyKey,
             'customer_email' => $data['customer_email'] ?? null,
             'customer_name' => $data['customer_name'] ?? null,

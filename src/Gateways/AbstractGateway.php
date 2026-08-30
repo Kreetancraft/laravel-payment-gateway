@@ -13,9 +13,9 @@ use Kreetancraft\PaymentGateway\Models\Gateway;
 
 abstract class AbstractGateway implements PaymentGateway
 {
-    protected \Kreetancraft\PaymentGateway\Models\Gateway $gateway;
+    protected Gateway $gateway;
 
-    public function __construct(\Kreetancraft\PaymentGateway\Models\Gateway $gateway)
+    public function __construct(Gateway $gateway)
     {
         $this->gateway = $gateway;
     }

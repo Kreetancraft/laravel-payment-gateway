@@ -6,6 +6,7 @@ namespace Kreetancraft\PaymentGateway\Actions;
 
 use Kreetancraft\PaymentGateway\Contracts\GatewayResolver;
 use Kreetancraft\PaymentGateway\Data\RefundResult;
+use Kreetancraft\PaymentGateway\Enums\PaymentStatus;
 use Kreetancraft\PaymentGateway\Models\Payment;
 use Lorisleiva\Actions\Concerns\AsAction;
 
@@ -55,7 +56,7 @@ class RefundPaymentAction
             return RefundResult::failure(
                 transactionId: $transactionId,
                 amount: $amount,
-                errorMessage: "Refund amount [{$amount}] exceeds remaining refundable amount [" . ($remainingCents / 100) . "].",
+                errorMessage: "Refund amount [{$amount}] exceeds remaining refundable amount [".($remainingCents / 100).'].',
                 errorCode: 'amount_exceeds_balance'
             );
         }
@@ -80,10 +81,10 @@ class RefundPaymentAction
         $payment->refunded_amount_cents += $requestedCents;
 
         if ($payment->refunded_amount_cents >= $payment->amount_cents) {
-            $payment->status = 'refunded';
+            $payment->status = PaymentStatus::Refunded;
             $payment->refunded_at = now();
         } else {
-            $payment->status = 'partially_refunded';
+            $payment->status = PaymentStatus::PartiallyRefunded;
             $payment->refunded_at = now();
         }
 

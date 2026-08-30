@@ -6,7 +6,6 @@ namespace Kreetancraft\PaymentGateway\Database\Factories;
 
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Kreetancraft\PaymentGateway\Models\Coupon;
-use Kreetancraft\PaymentGateway\Models\CouponUsage;
 
 /**
  * @extends Factory<Coupon>
@@ -17,37 +16,25 @@ class CouponFactory extends Factory
 
     public function definition(): array
     {
-        $type = fake()->randomElement(['percentage', 'fixed', 'buy_x_get_y', 'tiered', 'free_shipping']);
-        $currencies = ['USD', 'EUR', 'GBP', 'NPR', 'THB'];
-
         return [
             'uuid' => fake()->uuid(),
             'code' => strtoupper(fake()->unique()->bothify('????-####')),
             'name' => fake()->sentence(3),
             'description' => fake()->optional()->sentence(),
-            'type' => $type,
-            'value' => match ($type) {
-                'percentage' => fake()->numberBetween(1, 100),
-                'fixed' => fake()->numberBetween(100, 50000),
-                'buy_x_get_y' => fake()->numberBetween(1, 5),
-                'tiered' => fake()->numberBetween(1, 100),
-                'free_shipping' => 0,
-                default => 0,
-            },
-            'max_discount_amount' => fake()->optional()->numberBetween(1000, 100000),
-            'min_order_amount' => fake()->optional()->numberBetween(1000, 50000),
-            'usage_limit' => fake()->optional()->numberBetween(10, 1000),
-            'usage_limit_per_user' => fake()->optional()->numberBetween(1, 10),
+            'type' => 'percentage',
+            'value' => 10,
+            'max_discount_amount' => null,
+            'min_order_amount' => null,
+            'usage_limit' => null,
+            'usage_limit_per_user' => null,
             'user_ids' => null,
-            'starts_at' => fake()->optional()->dateTimeBetween('-30 days', '+30 days'),
-            'expires_at' => fake()->optional()->dateTimeBetween('+1 day', '+1 year'),
-            'usage_count' => fake()->numberBetween(0, 100),
+            'starts_at' => null,
+            'expires_at' => null,
+            'usage_count' => 0,
             'is_active' => true,
-            'max_discount_amount' => fake()->optional()->numberBetween(1000, 50000),
-            'min_order_amount' => fake()->optional()->numberBetween(1000, 100000),
             'conditions' => null,
             'is_stackable' => false,
-            'is_free_shipping' => $type === 'free_shipping',
+            'is_free_shipping' => false,
         ];
     }
 
@@ -56,6 +43,7 @@ class CouponFactory extends Factory
         return $this->state(fn (array $attributes) => [
             'type' => 'percentage',
             'value' => $value,
+            'is_free_shipping' => false,
         ]);
     }
 
@@ -64,6 +52,7 @@ class CouponFactory extends Factory
         return $this->state(fn (array $attributes) => [
             'type' => 'fixed',
             'value' => $valueCents,
+            'is_free_shipping' => false,
         ]);
     }
 
@@ -72,6 +61,7 @@ class CouponFactory extends Factory
         return $this->state(fn (array $attributes) => [
             'type' => 'buy_x_get_y',
             'value' => $buy,
+            'is_free_shipping' => false,
             'conditions' => array_merge(
                 $attributes['conditions'] ?? [],
                 ['buy' => $buy, 'get' => $get]
@@ -83,6 +73,7 @@ class CouponFactory extends Factory
     {
         return $this->state(fn (array $attributes) => [
             'type' => 'tiered',
+            'is_free_shipping' => false,
             'conditions' => array_merge(
                 $attributes['conditions'] ?? [],
                 ['tiers' => $tiers ?: [
@@ -109,11 +100,6 @@ class CouponFactory extends Factory
         ]);
     }
 
-    public function freeShipping(): static
-    {
-        return $this->freeShipping();
-    }
-
     public function active(): static
     {
         return $this->state(fn (array $attributes) => [
@@ -131,49 +117,45 @@ class CouponFactory extends Factory
         ]);
     }
 
-    public function forCurrency(string $currency): static
-    {
-        return $this->state(fn (array $attributes) => [
-            'conditions' => array_merge(
-                $attributes['conditions'] ?? [],
-                ['currencies' => [strtoupper($currency)]]
-            ),
-        ]);
-    }
-
-    public function withUserIds(array $userIds): static
-    {
-        return $this->state(fn (array $attributes) => [
-            'user_ids' => $userIds,
-        ]);
-    }
-
-    public function withUsageLimit(int $limit): static
+    public function withUsageLimit(int $limit = 100): static
     {
         return $this->state(fn (array $attributes) => [
             'usage_limit' => $limit,
         ]);
     }
 
-    public function perUserLimit(int $limit): static
+    public function withPerUserLimit(int $limit = 1): static
     {
         return $this->state(fn (array $attributes) => [
             'usage_limit_per_user' => $limit,
         ]);
     }
 
-    public function withUserIds(array $userIds): static
+    public function forUser(int $userId): static
     {
-        return $this->withUserIds($userIds);
+        return $this->state(fn (array $attributes) => [
+            'user_ids' => [$userId],
+        ]);
     }
 
-    public function withUsageLimit(int $limit): static
+    public function forUsers(array $userIds): static
     {
-        return $this->withUsageLimit($limit);
+        return $this->state(fn (array $attributes) => [
+            'user_ids' => $userIds,
+        ]);
     }
 
-    public function perUserLimit(int $limit): static
+    public function withMinOrder(int $cents = 5000): static
     {
-        return $this->perUserLimit($limit);
+        return $this->state(fn (array $attributes) => [
+            'min_order_amount' => $cents,
+        ]);
+    }
+
+    public function withMaxDiscount(int $cents = 5000): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'max_discount_amount' => $cents,
+        ]);
     }
 }

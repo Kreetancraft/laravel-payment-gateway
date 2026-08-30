@@ -61,8 +61,11 @@ class JoseCodec
 
     private JWELoader $jweLoader;
 
-    public function __construct(private readonly string $encryptionKeyId)
+    private readonly string $encryptionKeyId;
+
+    public function __construct(?string $encryptionKeyId = null)
     {
+        $this->encryptionKeyId = $encryptionKeyId ?? (string) HblConfig::get('encryption_key_id', '');
         $this->jwsCompactSerializer = new JWSCompactSerializer;
         $this->jwsBuilder = new JWSBuilder(new AlgorithmManager([new PS256]));
         $this->jwsLoader = new JWSLoader(
@@ -92,7 +95,7 @@ class JoseCodec
     /**
      * Sign then encrypt a JOSE payload for a PACO request.
      *
-     * @param array<string, mixed> $payload
+     * @param  array<string, mixed>  $payload
      */
     public function encrypt(array $payload, JWK $signingKey, JWK $encryptingKey): string
     {

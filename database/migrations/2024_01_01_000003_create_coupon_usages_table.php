@@ -20,7 +20,6 @@ return new class extends Migration
             $table->timestamps();
 
             $table->index(['coupon_id', 'user_id']);
-            $table->index(['order_type', 'order_id']);
         });
     }
 

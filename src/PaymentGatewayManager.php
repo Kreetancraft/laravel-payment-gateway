@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Kreetancraft\PaymentGateway;
 
-use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Manager;
 use InvalidArgumentException;
 use Kreetancraft\PaymentGateway\Contracts\GatewayConfig;
@@ -16,8 +16,9 @@ use Kreetancraft\PaymentGateway\Models\Gateway;
 /**
  * Resolves gateway drivers from the database.
  *
- * Gateways are now stored in the database (payment_gateways table) with encrypted
- * credentials. This allows easy configuration via admin UI without editing config files.
+ * Gateways are stored in the database (payment_gateways table) with encrypted
+ * credentials. This allows configuring, adding, and toggling gateways via admin UI
+ * without editing config files.
  */
 class PaymentGatewayManager extends Manager implements GatewayResolver
 {
@@ -31,10 +32,6 @@ class PaymentGatewayManager extends Manager implements GatewayResolver
 
         $enabled = $this->getEnabledGateways();
 
-        if (count($enabled) === 1) {
-            return $enabled[0];
-        }
-
         if (! empty($enabled)) {
             return $enabled[0];
         }
@@ -47,8 +44,7 @@ class PaymentGatewayManager extends Manager implements GatewayResolver
      */
     public function getEnabledGateways(): array
     {
-        // Cache for performance
-        return Cache::remember('payment_gateway.enabled', 300, function () {
+        return Cache::remember('payment_gateway.enabled', 300, function (): array {
             return Gateway::query()
                 ->enabled()
                 ->orderBy('label')
@@ -57,14 +53,34 @@ class PaymentGatewayManager extends Manager implements GatewayResolver
         });
     }
 
+    /**
+     * @return list<array<string, mixed>>
+     */
     public function getAllGateways(): array
     {
-        return Cache::remember('payment_gateway.all', 300, function () {
+        return Cache::remember('payment_gateway.all', 300, function (): array {
             return Gateway::query()
                 ->orderBy('label')
                 ->get(['code', 'label', 'icon', 'enabled'])
                 ->toArray();
         });
+    }
+
+    public function isGatewayEnabled(string $code): bool
+    {
+        return Gateway::where('code', $code)
+            ->where('enabled', true)
+            ->exists();
+    }
+
+    public function getGatewayConfigModel(string $gatewayCode): ?Gateway
+    {
+        return Gateway::where('code', $gatewayCode)->first();
+    }
+
+    public function getGatewayModel(string $gatewayCode): ?Gateway
+    {
+        return $this->getGatewayConfigModel($gatewayCode);
     }
 
     public function getCheckoutRoute(array $data = []): string
@@ -73,7 +89,6 @@ class PaymentGatewayManager extends Manager implements GatewayResolver
 
         if (count($enabled) === 1) {
             $gateway = $enabled[0];
-
             $routeName = (string) config('payment-gateway.routes.names.checkout', 'payment.checkout');
 
             return route($routeName, array_merge($data, ['gateway' => $gateway]));
@@ -97,11 +112,11 @@ class PaymentGatewayManager extends Manager implements GatewayResolver
     {
         $gateway = Gateway::where('code', $driver)->first();
 
-        if (!$gateway) {
+        if (! $gateway) {
             throw new InvalidArgumentException("Payment gateway driver [{$driver}] not found in database.");
         }
 
-        if (!$gateway->isEnabled()) {
+        if (! $gateway->isEnabled()) {
             throw new InvalidArgumentException("Payment gateway [{$driver}] is disabled.");
         }
 
@@ -109,22 +124,23 @@ class PaymentGatewayManager extends Manager implements GatewayResolver
             throw new InvalidArgumentException("Payment gateway [{$driver}] is not properly configured. Missing required credentials.");
         }
 
-        $class = $gateway->getClassName();
+        $class = (string) $gateway->getClassName();
 
-        if (! class_exists((string) $class)) {
+        if (! class_exists($class)) {
             throw new InvalidArgumentException("Payment gateway class [{$class}] for driver [{$driver}] does not exist.");
         }
 
-        $gatewayConfig = $this->makeGatewayConfig($gateway);
-
-        return new $class($gatewayConfig);
+        // Use container to resolve gateway instance with constructor dependency injection (e.g. HblClient)
+        return $this->container->make($class, [
+            'gateway' => $gateway,
+        ]);
     }
 
     public function resolve(string $gatewayCode): ?PaymentGateway
     {
         $gateway = Gateway::where('code', $gatewayCode)->first();
 
-        if (!$gateway || !$gateway->isEnabled()) {
+        if (! $gateway || ! $gateway->isEnabled()) {
             return null;
         }
 
@@ -139,7 +155,7 @@ class PaymentGatewayManager extends Manager implements GatewayResolver
     {
         $gateway = Gateway::where('code', $gatewayCode)->first();
 
-        if (!$gateway) {
+        if (! $gateway) {
             return null;
         }
 
@@ -150,62 +166,19 @@ class PaymentGatewayManager extends Manager implements GatewayResolver
     {
         $gateway = Gateway::where('code', $gatewayCode)->first();
 
-        if (!$gateway) {
+        if (! $gateway) {
             return null;
         }
 
         return $this->makeGatewayConfig($gateway);
     }
 
-    public function getEnabledGateways(): array
+    private function makeGatewayConfig(Gateway $gateway): GatewayConfig
     {
-        return Cache::remember('payment_gateway.enabled', 300, function () {
-            return Gateway::query()
-                ->enabled()
-                ->orderBy('label')
-                ->pluck('code')
-                ->all();
-        });
-    }
-
-    public function getAllGateways(): array
-    {
-        return Cache::remember('payment_gateway.all', 300, function () {
-            return Gateway::query()
-                ->orderBy('label')
-                ->get(['code', 'label', 'icon', 'enabled'])
-                ->toArray();
-        });
-    }
-
-    public function isGatewayEnabled(string $code): bool
-    {
-        return Gateway::where('code', $code)
-            ->where('enabled', true)
-            ->exists();
-    }
-
-    public function getGatewayConfigModel(string $gatewayCode): ?\Kreetancraft\PaymentGateway\Models\Gateway
-    {
-        return Gateway::where('code', $gatewayCode)->first();
-    }
-
-    public function getGatewayConfig(string $gatewayCode): ?GatewayConfig
-    {
-        $gateway = Gateway::where('code', $gatewayCode)->first();
-
-        if (!$gateway) {
-            return null;
-        }
-
-        return $this->makeGatewayConfig($gateway);
-    }
-
-    private function makeGatewayConfig($gateway): GatewayConfig
-    {
-        return new class($gateway) implements GatewayConfig {
+        return new class($gateway) implements GatewayConfig
+        {
             public function __construct(
-                private readonly \Kreetancraft\PaymentGateway\Models\Gateway $gateway,
+                private readonly Gateway $gateway,
             ) {}
 
             public function getCode(): string

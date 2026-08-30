@@ -20,27 +20,16 @@ return new class extends Migration
             $table->boolean('checkout_redirect')->default(false);
             $table->boolean('supports_subscriptions')->default(false);
             $table->string('environment')->default('demo'); // demo, production
-            
+
             // Encrypted credentials (encrypted via Laravel's Crypt)
             $table->json('credentials')->nullable(); // Encrypted sensitive data: API keys, secrets, keys, paths
-            
+
             // Gateway configuration fields definition (for admin UI)
             $table->json('config_fields')->nullable();
-            
-            // Gateway configuration
-            $table->boolean('enabled')->default(false);
-            $table->string('class')->nullable(); // Gateway class FQCN
-            $table->json('currencies')->nullable(); // Supported currencies
-            $table->json('capabilities')->nullable(); // charge, refund, webhook, verify, subscription
-            $table->boolean('checkout_redirect')->default(false);
-            $table->boolean('supports_subscriptions')->default(false);
-            $table->string('environment')->default('demo'); // demo, production
-            $table->json('config_fields')->nullable(); // Field definitions for admin UI
-            $table->json('credentials')->nullable(); // Encrypted sensitive data
-            
+
             $table->timestamps();
             $table->softDeletes();
-            
+
             // Indexes
             $table->index('code');
             $table->index('enabled');

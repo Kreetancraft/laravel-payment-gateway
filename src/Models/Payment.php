@@ -13,6 +13,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
 use Kreetancraft\PaymentGateway\Database\Factories\PaymentFactory;
+use Kreetancraft\PaymentGateway\Enums\PaymentStatus;
 
 /**
  * @property int $id
@@ -74,6 +75,7 @@ class Payment extends Model
             'paid_at' => 'datetime',
             'refunded_at' => 'datetime',
             'metadata' => 'array',
+            'status' => PaymentStatus::class,
         ];
     }
 
@@ -95,33 +97,33 @@ class Payment extends Model
             }
 
             if (blank($payment->reference)) {
-                $payment->reference = "PMT-" . now()->format('ymd') . "-" . Str::upper(Str::random(6));
+                $payment->reference = 'PMT-'.now()->format('ymd').'-'.Str::upper(Str::random(6));
             }
 
             if (blank($payment->idempotency_key)) {
-                $payment->idempotency_key = hash('sha256', "{$payment->gateway}:{$payment->amount_cents}:{$payment->currency}:" . Str::random(16));
+                $payment->idempotency_key = hash('sha256', "{$payment->gateway}:{$payment->amount_cents}:{$payment->currency}:".Str::random(16));
             }
         });
     }
 
     /**
-     * @param Builder<Payment> $query
+     * @param  Builder<Payment>  $query
      */
     public function scopeSucceeded(Builder $query): Builder
     {
-        return $query->where('status', 'succeeded');
+        return $query->where('status', PaymentStatus::Succeeded);
     }
 
     /**
-     * @param Builder<Payment> $query
+     * @param  Builder<Payment>  $query
      */
     public function scopePending(Builder $query): Builder
     {
-        return $query->where('status', 'pending');
+        return $query->where('status', PaymentStatus::Pending);
     }
 
     /**
-     * @param Builder<Payment> $query
+     * @param  Builder<Payment>  $query
      */
     public function scopeForGateway(Builder $query, string $gateway): Builder
     {
@@ -135,7 +137,7 @@ class Payment extends Model
 
     public function isSucceeded(): bool
     {
-        return $this->status === 'succeeded';
+        return $this->status === PaymentStatus::Succeeded;
     }
 
     public function isRefunded(): bool

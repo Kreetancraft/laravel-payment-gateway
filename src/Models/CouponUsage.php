@@ -4,12 +4,24 @@ declare(strict_types=1);
 
 namespace Kreetancraft\PaymentGateway\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Kreetancraft\PaymentGateway\Database\Factories\CouponUsageFactory;
 
+/**
+ * @property int $id
+ * @property int $coupon_id
+ * @property int|null $user_id
+ * @property string $order_type
+ * @property int $order_id
+ * @property int $usage_count
+ * @property int $amount_discounted_cents
+ * @property string $currency
+ * @property array|null $metadata
+ */
 class CouponUsage extends Model
 {
     use HasFactory;
@@ -27,18 +39,26 @@ class CouponUsage extends Model
         'metadata',
     ];
 
-    protected $casts = [
-        'usage_count' => 'integer',
-        'amount_discounted_cents' => 'integer',
-        'metadata' => 'array',
-    ];
+    /**
+     * @return array<string, string>
+     */
+    protected function casts(): array
+    {
+        return [
+            'coupon_id' => 'integer',
+            'user_id' => 'integer',
+            'order_id' => 'integer',
+            'usage_count' => 'integer',
+            'amount_discounted_cents' => 'integer',
+            'metadata' => 'array',
+        ];
+    }
 
     protected static function newFactory(): CouponUsageFactory
     {
         return CouponUsageFactory::new();
     }
 
-    // Relationships
     public function coupon(): BelongsTo
     {
         return $this->belongsTo(Coupon::class);
@@ -54,44 +74,57 @@ class CouponUsage extends Model
         return $this->morphTo();
     }
 
-    // Scopes
-    public function scopeForCoupon($query, int $couponId)
+    /**
+     * @param  Builder<CouponUsage>  $query
+     * @return Builder<CouponUsage>
+     */
+    public function scopeForCoupon(Builder $query, int $couponId): Builder
     {
         return $query->where('coupon_id', $couponId);
     }
 
-    public function scopeForUser($query, int $userId)
+    /**
+     * @param  Builder<CouponUsage>  $query
+     * @return Builder<CouponUsage>
+     */
+    public function scopeForUser(Builder $query, int $userId): Builder
     {
         return $query->where('user_id', $userId);
     }
 
-    public function scopeForOrder($query, string $orderType, int $orderId)
+    /**
+     * @param  Builder<CouponUsage>  $query
+     * @return Builder<CouponUsage>
+     */
+    public function scopeForOrder(Builder $query, string $orderType, int $orderId): Builder
     {
         return $query->where('order_type', $orderType)->where('order_id', $orderId);
     }
 
-    public function scopeRecent($query)
+    /**
+     * @param  Builder<CouponUsage>  $query
+     * @return Builder<CouponUsage>
+     */
+    public function scopeRecent(Builder $query): Builder
     {
         return $query->latest('created_at');
     }
 
-    // Helper attributes
-    public function getAmountDiscountedAttribute(): int
-    {
-        return $this->amount_discounted_cents;
-    }
-
-    public function getFormattedAmountDiscountedAttribute(): string
+    public function getFormattedAmountDiscounted(): string
     {
         return number_format($this->amount_discounted_cents / 100, 2);
     }
 
-    public function getFormattedCurrencyAttribute(): string
+    public function getFormattedCurrency(): string
     {
         return strtoupper($this->currency);
     }
 
-    // Static helper to record coupon usage
+    /**
+     * Static helper to record coupon usage.
+     *
+     * @param  array<string, mixed>  $metadata
+     */
     public static function recordUsage(
         int $couponId,
         int $userId,
@@ -100,8 +133,7 @@ class CouponUsage extends Model
         int $amountDiscountedCents,
         string $currency,
         array $metadata = []
-    ): self
-    {
+    ): self {
         return static::create([
             'coupon_id' => $couponId,
             'user_id' => $userId,
@@ -112,21 +144,5 @@ class CouponUsage extends Model
             'currency' => strtoupper($currency),
             'metadata' => $metadata,
         ]);
-    }
-
-    // Accessor methods
-    public function getAmountDiscountedAttribute(): int
-    {
-        return $this->amount_discounted_cents;
-    }
-
-    public function getFormattedAmountDiscountedAttribute(): string
-    {
-        return number_format($this->amount_discounted_cents / 100, 2);
-    }
-
-    public function getFormattedCurrencyAttribute(): string
-    {
-        return strtoupper($this->currency);
     }
 }

@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace Kreetancraft\PaymentGateway\Tests;
 
 use Illuminate\Foundation\Application;
-use Orchestra\Testbench\TestCase as BaseTestCase;
-use Kreetancraft\PaymentGateway\PaymentGatewayServiceProvider;
+use Kreetancraft\PaymentGateway\Providers\PaymentGatewayServiceProvider;
 use Livewire\LivewireServiceProvider;
+use Orchestra\Testbench\TestCase as BaseTestCase;
 
 abstract class TestCase extends BaseTestCase
 {
@@ -36,11 +36,16 @@ abstract class TestCase extends BaseTestCase
         $app['config']->set('payment-gateway.gateways.himalayan.enabled', false);
         $app['config']->set('payment-gateway.gateways.himalayan.office_id', null);
         $app['config']->set('payment-gateway.webhook.verify_signature', false);
-        $app['config']->set('app.key', 'base64:' . base64_encode(random_bytes(32)));
+        $app['config']->set('app.key', 'base64:'.base64_encode(random_bytes(32)));
     }
 
     protected function defineDatabaseMigrations(): void
     {
-        $this->loadMigrationsFrom(__DIR__ . '/../database/migrations');
+        $this->loadMigrationsFrom(__DIR__.'/../database/migrations');
+    }
+
+    protected function seedRolesAndPermissions(): void
+    {
+        // Hook for permission seeding in tests if spatie/laravel-permission is installed
     }
 }

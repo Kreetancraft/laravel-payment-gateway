@@ -116,8 +116,8 @@ class PaymentController extends Controller
         $enabled = $resolver->getEnabledGateways();
 
         $gateways = collect(config('payment-gateway.gateways', []))
-            ->map(function (array $config, string $code) use ($enabled): array {
-                $gatewayConfig = app(GatewayResolver::class)->getGatewayConfig($code);
+            ->map(function (array $config, string $code) use ($resolver, $enabled): array {
+                $gatewayConfig = $resolver->getGatewayConfig($code);
 
                 if ($gatewayConfig === null) {
                     return [

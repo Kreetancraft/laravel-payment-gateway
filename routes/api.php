@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 use Illuminate\Support\Facades\Route;
 use Kreetancraft\PaymentGateway\Http\Controllers\Api\CheckoutController;
+use Kreetancraft\PaymentGateway\Http\Controllers\CouponController;
 use Kreetancraft\PaymentGateway\Http\Controllers\PaymentController;
 use Kreetancraft\PaymentGateway\Http\Controllers\WebhookController;
-use Kreetancraft\PaymentGateway\Http\Controllers\CouponController;
 
 Route::prefix('v1/payment')
     ->middleware(['api'])

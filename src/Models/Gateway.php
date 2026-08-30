@@ -4,18 +4,33 @@ declare(strict_types=1);
 
 namespace Kreetancraft\PaymentGateway\Models;
 
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Casts\Attribute;
-use Illuminate\Support\Facades\Crypt;
 use Kreetancraft\PaymentGateway\Database\Factories\GatewayFactory;
+use Kreetancraft\PaymentGateway\Support\GatewayEncrypter;
 
 /**
- * Gateway model with encrypted credentials storage.
- * 
- * Sensitive credentials (API keys, secrets, keys, certificates) are stored 
- * as encrypted JSON using Laravel's built-in encryption. Individual sensitive
- * fields can be accessed via typed getters/setters.
+ * Gateway model with secure database-stored encrypted credentials.
+ *
+ * Sensitive credentials (API keys, secrets, private keys, certificates)
+ * are stored in the database as encrypted ciphertext using GatewayEncrypter
+ * (via PAYMENT_GATEWAY_ENCRYPTION_KEY or APP_KEY in .env).
+ *
+ * @property int $id
+ * @property string $code
+ * @property string $label
+ * @property string|null $icon
+ * @property bool $enabled
+ * @property string $class
+ * @property array|null $currencies
+ * @property array|null $capabilities
+ * @property bool $checkout_redirect
+ * @property bool $supports_subscriptions
+ * @property string $environment
+ * @property array $credentials
+ * @property array|null $config_fields
  */
 class Gateway extends Model
 {
@@ -24,17 +39,6 @@ class Gateway extends Model
     protected $table = 'payment_gateways';
 
     protected $guarded = ['id'];
-
-    protected $casts = [
-        'enabled' => 'boolean',
-        'checkout_redirect' => 'boolean',
-        'supports_subscriptions' => 'boolean',
-        'currencies' => 'array',
-        'capabilities' => 'array',
-        'config_fields' => 'array',
-        'environment' => 'string',
-        'credentials' => 'encrypted:array', // Encrypted sensitive data
-    ];
 
     protected $fillable = [
         'code',
@@ -51,184 +55,136 @@ class Gateway extends Model
         'config_fields',
     ];
 
+    /**
+     * @return array<string, string>
+     */
+    protected function casts(): array
+    {
+        return [
+            'enabled' => 'boolean',
+            'checkout_redirect' => 'boolean',
+            'supports_subscriptions' => 'boolean',
+            'currencies' => 'array',
+            'capabilities' => 'array',
+            'config_fields' => 'array',
+            'environment' => 'string',
+        ];
+    }
+
     protected static function newFactory(): GatewayFactory
     {
         return GatewayFactory::new();
     }
 
-    // ============================================
-    // TYPED ACCESSORS FOR SENSITIVE CREDENTIALS
-    // ============================================
-
     /**
-     * Get decrypted credentials array.
+     * Secure credentials accessor/mutator using dedicated .env encryption key.
      */
     protected function credentials(): Attribute
     {
         return Attribute::make(
-            get: fn ($value) => $value ? json_decode(Crypt::decryptString($value), true) : [],
-            set: fn ($value) => Crypt::encryptString(json_encode($value)),
+            get: fn (?string $value): array => GatewayEncrypter::decrypt($value),
+            set: fn (array|string $value): string => is_string($value) ? $value : GatewayEncrypter::encrypt($value),
         );
     }
 
+    public function getCredential(string $key, mixed $default = null): mixed
+    {
+        return ($this->credentials ?? [])[$key] ?? $default;
+    }
+
+    public function setCredential(string $key, mixed $value): void
+    {
+        $credentials = $this->credentials ?? [];
+        $credentials[$key] = $value;
+        $this->credentials = $credentials;
+    }
+
+    public function getConfig(string $key, mixed $default = null): mixed
+    {
+        return $this->getCredential($key, $default);
+    }
+
+    public function setConfig(string $key, mixed $value): void
+    {
+        $this->setCredential($key, $value);
+    }
+
+    public function getConfigValue(string $key, mixed $default = null): mixed
+    {
+        return $this->getCredential($key, $default);
+    }
+
     // ============================================
-    // TYPED CREDENTIAL ACCESSORS
+    // STRIPE CREDENTIALS GETTERS & SETTERS
     // ============================================
 
-    /**
-     * Get Stripe secret key (sk_test_... or sk_live_...).
-     */
     public function getStripeSecretKey(): ?string
     {
         return $this->getCredential('secret_key');
     }
 
-    /**
-     * Set Stripe secret key.
-     */
     public function setStripeSecretKey(string $value): void
     {
         $this->setCredential('secret_key', $value);
     }
 
-    /**
-     * Get Stripe publishable key.
-     */
     public function getStripePublishableKey(): ?string
     {
         return $this->getCredential('publishable_key');
     }
 
-    /**
-     * Set Stripe publishable key.
-     */
     public function setStripePublishableKey(string $value): void
     {
         $this->setCredential('publishable_key', $value);
     }
 
-    /**
-     * Get Stripe webhook signing secret.
-     */
     public function getStripeWebhookSecret(): ?string
     {
         return $this->getCredential('webhook_secret');
     }
 
-    /**
-     * Set Stripe webhook secret.
-     */
     public function setStripeWebhookSecret(string $value): void
     {
         $this->setCredential('webhook_secret', $value);
     }
 
-    /**
-     * Get Himalayan Bank Office ID.
-     */
+    // ============================================
+    // HIMALAYAN BANK CREDENTIALS GETTERS & SETTERS
+    // ============================================
+
     public function getHimalayanOfficeId(): ?string
     {
         return $this->getCredential('office_id');
     }
 
-    /**
-     * Set Himalayan Bank Office ID.
-     */
     public function setHimalayanOfficeId(string $value): void
     {
         $this->setCredential('office_id', $value);
     }
 
-    /**
-     * Get Himalayan Bank API key.
-     */
     public function getHimalayanApiKey(): ?string
     {
         return $this->getCredential('api_key');
     }
 
-    /**
-     * Set Himalayan Bank API key.
-     */
     public function setHimalayanApiKey(string $value): void
     {
         $this->setCredential('api_key', $value);
     }
 
-    /**
-     * Get Himalayan Bank encryption key ID.
-     */
     public function getHimalayanEncryptionKeyId(): ?string
     {
         return $this->getCredential('encryption_key_id');
     }
 
-    /**
-     * Set Himalayan Bank encryption key ID.
-     */
     public function setHimalayanEncryptionKeyId(string $value): void
     {
         $this->setCredential('encryption_key_id', $value);
     }
 
-    /**
-     * Get merchant signing key path.
-     */
-    public function getMerchantSigningKeyPath(): ?string
-    {
-        return $this->getCredential('merchant_signing_key_path');
-    }
-
-    public function setMerchantSigningKeyPath(string $value): void
-    {
-        $this->setCredential('merchant_signing_key_path', $value);
-    }
-
-    /**
-     * Get merchant decryption key path.
-     */
-    public function getMerchantDecryptionKeyPath(): ?string
-    {
-        return $this->getCredential('merchant_decryption_key_path');
-    }
-
-    public function setMerchantDecryptionKeyPath(string $value): void
-    {
-        $this->setCredential('merchant_decryption_key_path', $value);
-    }
-
-    /**
-     * Get PACO encryption public key path.
-     */
-    public function getPacoEncryptionPublicKeyPath(): ?string
-    {
-        return $this->getCredential('paco_encryption_public_key_path');
-    }
-
-    public function setPacoEncryptionPublicKeyPath(string $value): void
-    {
-        $this->setCredential('paco_encryption_public_key_path', $value);
-    }
-
-    /**
-     * Get PACO signing public key path.
-     */
-    public function getPacoSigningPublicKeyPath(): ?string
-    {
-        return $this->getCredential('paco_signing_public_key_path');
-    }
-
-    public function setPacoSigningPublicKeyPath(string $value): void
-    {
-        $this->setCredential('paco_signing_public_key_path', $value);
-    }
-
-    /**
-     * Get Himalayan Bank environment (demo/production).
-     */
     public function getHimalayanEnvironment(): string
     {
-        return $this->getCredential('environment', 'demo');
+        return (string) $this->getCredential('environment', 'demo');
     }
 
     public function setHimalayanEnvironment(string $value): void
@@ -236,187 +192,168 @@ class Gateway extends Model
         $this->setCredential('environment', $value);
     }
 
-    /**
-     * Get a specific credential value (decrypted).
-     */
-    public function getCredential(string $key, $default = null): mixed
+    public function getMerchantSigningKey(): ?string
     {
-        $credentials = $this->credentials ?? [];
-        return $credentials[$key] ?? $default;
+        return $this->getCredential('merchant_signing_key') ?? $this->getCredential('merchant_signing_key_path');
     }
 
-    /**
-     * Set a credential value (automatically encrypted).
-     */
-    public function setCredential(string $key, mixed $value): void
+    public function setMerchantSigningKey(string $value): void
     {
-        $credentials = $this->credentials ?? [];
-        $credentials[$key] = $value;
-        $this->credentials = $credentials;
+        $this->setCredential('merchant_signing_key', $value);
+    }
+
+    public function getMerchantSigningKeyPath(): ?string
+    {
+        return $this->getMerchantSigningKey();
+    }
+
+    public function setMerchantSigningKeyPath(string $value): void
+    {
+        $this->setMerchantSigningKey($value);
+    }
+
+    public function getMerchantDecryptionKey(): ?string
+    {
+        return $this->getCredential('merchant_decryption_key') ?? $this->getCredential('merchant_decryption_key_path');
+    }
+
+    public function setMerchantDecryptionKey(string $value): void
+    {
+        $this->setCredential('merchant_decryption_key', $value);
+    }
+
+    public function getMerchantDecryptionKeyPath(): ?string
+    {
+        return $this->getMerchantDecryptionKey();
+    }
+
+    public function setMerchantDecryptionKeyPath(string $value): void
+    {
+        $this->setMerchantDecryptionKey($value);
+    }
+
+    public function getPacoEncryptionPublicKey(): ?string
+    {
+        return $this->getCredential('paco_encryption_public_key') ?? $this->getCredential('paco_encryption_public_key_path');
+    }
+
+    public function setPacoEncryptionPublicKey(string $value): void
+    {
+        $this->setCredential('paco_encryption_public_key', $value);
+    }
+
+    public function getPacoEncryptionPublicKeyPath(): ?string
+    {
+        return $this->getPacoEncryptionPublicKey();
+    }
+
+    public function setPacoEncryptionPublicKeyPath(string $value): void
+    {
+        $this->setPacoEncryptionPublicKey($value);
+    }
+
+    public function getPacoSigningPublicKey(): ?string
+    {
+        return $this->getCredential('paco_signing_public_key') ?? $this->getCredential('paco_signing_public_key_path');
+    }
+
+    public function setPacoSigningPublicKey(string $value): void
+    {
+        $this->setCredential('paco_signing_public_key', $value);
+    }
+
+    public function getPacoSigningPublicKeyPath(): ?string
+    {
+        return $this->getPacoSigningPublicKey();
+    }
+
+    public function setPacoSigningPublicKeyPath(string $value): void
+    {
+        $this->setPacoSigningPublicKey($value);
     }
 
     // ============================================
-    // TYPED CONFIG ACCESSORS
+    // METADATA & HELPER METHODS
     // ============================================
 
-    /**
-     * Get a configuration value (decrypted).
-     */
-    public function getConfig(string $key, $default = null): mixed
-    {
-        $credentials = $this->credentials ?? [];
-        return $credentials[$key] ?? $default;
-    }
-
-    /**
-     * Set a configuration value (automatically encrypted).
-     */
-    public function setConfig(string $key, mixed $value): void
-    {
-        $credentials = $this->credentials ?? [];
-        $credentials[$key] = $value;
-        $this->credentials = $credentials;
-    }
-
-    /**
-     * Get a configuration value with default.
-     */
-    public function getConfigValue(string $key, $default = null): mixed
-    {
-        $credentials = $this->credentials ?? [];
-        return $credentials[$key] ?? $default;
-    }
-
-    /**
-     * Set a configuration value (automatically encrypted).
-     */
-    public function setConfig(string $key, mixed $value): void
-    {
-        $credentials = $this->credentials ?? [];
-        $credentials[$key] = $value;
-        $this->credentials = $credentials;
-    }
-
-    // ============================================
-    // TYPED ACCESSORS FOR COMMON FIELDS
-    // ============================================
-
-    /**
-     * Get the gateway's label.
-     */
     public function getLabel(): string
     {
         return $this->label;
     }
 
-    /**
-     * Get the gateway's icon.
-     */
-    public function getIcon(): string
+    public function getDisplayLabel(): string
     {
-        return $this->icon;
+        return $this->label;
     }
 
-    /**
-     * Get the gateway's class name.
-     */
-    public function getClass(): string
+    public function getIcon(): string
+    {
+        return $this->icon ?? '';
+    }
+
+    public function getCode(): string
+    {
+        return $this->code;
+    }
+
+    public function getClassName(): string
     {
         return $this->class;
     }
 
     /**
-     * Get the gateway's supported currencies.
+     * @return list<string>
      */
     public function getSupportedCurrencies(): array
     {
-        return $this->currencies;
+        return (array) ($this->currencies ?? []);
     }
 
     /**
-     * Get the gateway's capabilities.
+     * @return list<string>
      */
     public function getCapabilities(): array
     {
-        return $this->capabilities;
+        return (array) ($this->capabilities ?? []);
     }
 
-    /**
-     * Check if gateway uses checkout redirect.
-     */
     public function checkoutRedirect(): bool
     {
-        return $this->checkout_redirect;
+        return (bool) $this->checkout_redirect;
+    }
+
+    public function usesCheckoutRedirect(): bool
+    {
+        return (bool) $this->checkout_redirect;
+    }
+
+    public function supportsSubscriptions(): bool
+    {
+        return (bool) $this->supports_subscriptions;
     }
 
     /**
-     * Get the gateway's configuration fields definition.
+     * @return array<string, mixed>
      */
     public function getConfigFields(): array
     {
-        return $this->config_fields;
+        return (array) ($this->config_fields ?? []);
     }
 
-    /**
-     * Get the gateway's environment.
-     */
-    public function getEnvironment(): string
-    {
-        return $this->environment;
-    }
-
-    /**
-     * Check if gateway is enabled.
-     */
-    public function isEnabled(): bool
-    {
-        return $this->enabled;
-    }
-
-    /**
-     * Get a specific credential value (decrypted).
-     */
-    public function getCredential(string $key, $default = null): mixed
-    {
-        $credentials = $this->credentials ?? [];
-        return $credentials[$key] ?? $default;
-    }
-
-    /**
-     * Set a credential value (automatically encrypted).
-     */
-    public function setCredential(string $key, mixed $value): void
-    {
-        $credentials = $this->credentials ?? [];
-        $credentials[$key] = $value;
-        $this->credentials = $credentials;
-    }
-
-    /**
-     * Get decrypted credential value.
-     */
-    protected function credentials(): Attribute
-    {
-        return Attribute::make(
-            get: fn ($value) => $value ? json_decode(Crypt::decryptString($value), true) : [],
-            set: fn ($value) => Crypt::encryptString(json_encode($value)),
-        );
-    }
-
-    /**
-     * Get the gateway's environment.
-     */
     public function getEnvironment(): string
     {
         return $this->environment ?? 'demo';
     }
 
-    /**
-     * Check if gateway supports a currency.
-     */
+    public function isEnabled(): bool
+    {
+        return (bool) $this->enabled;
+    }
+
     public function supportsCurrency(string $currency): bool
     {
-        $currencies = $this->currencies;
+        $currencies = $this->getSupportedCurrencies();
+
         if (empty($currencies)) {
             return true;
         }
@@ -424,106 +361,14 @@ class Gateway extends Model
         return in_array(strtoupper($currency), array_map('strtoupper', $currencies), true);
     }
 
-    /**
-     * Get the gateway's capabilities.
-     */
-    public function getCapabilities(): array
-    {
-        return $this->capabilities;
-    }
-
-    /**
-     * Check if gateway uses checkout redirect.
-     */
-    public function usesCheckoutRedirect(): bool
-    {
-        return $this->checkout_redirect;
-    }
-
-    /**
-     * Get the gateway's configuration fields definition.
-     */
-    public function getConfigFields(): array
-    {
-        return $this->config_fields;
-    }
-
-    /**
-     * Get a configuration value (decrypted).
-     */
-    public function getConfig(string $key, $default = null): mixed
-    {
-        $credentials = $this->credentials ?? [];
-        return $credentials[$key] ?? $default;
-    }
-
-    /**
-     * Set a configuration value (automatically encrypted).
-     */
-    public function setConfig(string $key, mixed $value): void
-    {
-        $credentials = $this->credentials ?? [];
-        $credentials[$key] = $value;
-        $this->credentials = $credentials;
-    }
-
-    /**
-     * Get a configuration value with default.
-     */
-    public function getConfigValue(string $key, $default = null): mixed
-    {
-        $credentials = $this->credentials ?? [];
-        return $credentials[$key] ?? $default;
-    }
-
-    /**
-     * Set a configuration value (automatically encrypted).
-     */
-    public function setConfig(string $key, mixed $value): void
-    {
-        $credentials = $this->credentials ?? [];
-        $credentials[$key] = $value;
-        $this->credentials = $credentials;
-    }
-
-    /**
-     * Scope: only enabled gateways.
-     */
-    public function scopeEnabled($query)
-    {
-        return $query->where('enabled', true);
-    }
-
-    /**
-     * Scope: only active (enabled) gateways.
-     */
-    public function scopeActive($query)
-    {
-        return $query->where('enabled', true);
-    }
-
-    /**
-     * Scope: filter by environment.
-     */
-    public function scopeEnvironment($query, string $environment)
-    {
-        return $query->where('environment', $environment);
-    }
-
-    /**
-     * Check if gateway is configured (has required credentials).
-     */
     public function isConfigured(): bool
     {
-        if (!$this->enabled) {
+        if (! $this->isEnabled()) {
             return false;
         }
 
-        $requiredFields = $this->getRequiredConfigFields();
-        
-        foreach ($requiredFields as $field) {
-            $value = $this->getCredential($field['key']);
-            if (blank($value)) {
+        foreach ($this->getRequiredConfigFields() as $field) {
+            if (blank($this->getCredential($field))) {
                 return false;
             }
         }
@@ -532,280 +377,32 @@ class Gateway extends Model
     }
 
     /**
-     * Get required configuration fields for this gateway.
+     * @return list<string>
      */
     protected function getRequiredConfigFields(): array
     {
-        return collect($this->config_fields ?? [])
+        return collect($this->getConfigFields())
             ->where('required', true)
             ->pluck('key')
+            ->map(fn ($key) => (string) $key)
             ->all();
     }
 
-    /**
-     * Get the gateway's display label.
-     */
-    public function getDisplayLabel(): string
-    {
-        return $this->label;
-    }
+    // ============================================
+    // ELOQUENT SCOPES
+    // ============================================
 
-    /**
-     * Get the gateway's icon.
-     */
-    public function getIcon(): string
-    {
-        return $this->icon ?? '';
-    }
-
-    /**
-     * Get the gateway's class name.
-     */
-    public function getClassName(): string
-    {
-        return $this->class;
-    }
-
-    /**
-     * Check if gateway supports subscriptions.
-     */
-    public function supportsSubscriptions(): bool
-    {
-        return $this->supports_subscriptions;
-    }
-
-    /**
-     * Check if gateway uses checkout redirect.
-     */
-    public function usesCheckoutRedirect(): bool
-    {
-        return $this->checkout_redirect;
-    }
-
-    /**
-     * Get the gateway's capabilities.
-     */
-    public function getCapabilities(): array
-    {
-        return $this->capabilities ?? [];
-    }
-
-    /**
-     * Get the gateway's configuration fields.
-     */
-    public function getConfigFields(): array
-    {
-        return $this->config_fields;
-    }
-
-    /**
-     * Get a configuration value (decrypted).
-     */
-    public function getConfig(string $key, $default = null): mixed
-    {
-        $credentials = $this->credentials ?? [];
-        return $credentials[$key] ?? $default;
-    }
-
-    /**
-     * Set a configuration value (automatically encrypted).
-     */
-    public function setConfig(string $key, mixed $value): void
-    {
-        $credentials = $this->credentials ?? [];
-        $credentials[$key] = $value;
-        $this->credentials = $credentials;
-    }
-
-    /**
-     * Get a configuration value with default.
-     */
-    public function getConfigValue(string $key, $default = null): mixed
-    {
-        $credentials = $this->credentials ?? [];
-        return $credentials[$key] ?? $default;
-    }
-
-    /**
-     * Set a configuration value (automatically encrypted).
-     */
-    public function setConfig(string $key, mixed $value): void
-    {
-        $credentials = $this->credentials ?? [];
-        $credentials[$key] = $value;
-        $this->credentials = $credentials;
-    }
-
-    /**
-     * Scope: only enabled gateways.
-     */
-    public function scopeEnabled($query)
+    public function scopeEnabled(Builder $query): Builder
     {
         return $query->where('enabled', true);
     }
 
-    /**
-     * Scope: only active (enabled) gateways.
-     */
-    public function scopeActive($query)
+    public function scopeActive(Builder $query): Builder
     {
         return $query->where('enabled', true);
     }
 
-    /**
-     * Scope: filter by environment.
-     */
-    public function scopeEnvironment($query, string $environment)
-    {
-        return $query->where('environment', $environment);
-    }
-
-    /**
-     * Check if gateway is configured (has required credentials).
-     */
-    public function isConfigured(): bool
-    {
-        if (!$this->enabled) {
-            return false;
-        }
-
-        $requiredFields = $this->getRequiredConfigFields();
-        
-        foreach ($requiredFields as $field) {
-            $value = $this->getCredential($field['key']);
-            if (blank($value)) {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    /**
-     * Get required configuration fields for this gateway.
-     */
-    protected function getRequiredConfigFields(): array
-    {
-        return collect($this->config_fields ?? [])
-            ->where('required', true)
-            ->pluck('key')
-            ->all();
-    }
-
-    /**
-     * Get the gateway's display label.
-     */
-    public function getDisplayLabel(): string
-    {
-        return $this->label;
-    }
-
-    /**
-     * Get the gateway's icon.
-     */
-    public function getIcon(): string
-    {
-        return $this->icon ?? '';
-    }
-
-    /**
-     * Get the gateway's class name.
-     */
-    public function getClassName(): string
-    {
-        return $this->class;
-    }
-
-    /**
-     * Check if gateway supports subscriptions.
-     */
-    public function supportsSubscriptions(): bool
-    {
-        return $this->supports_subscriptions;
-    }
-
-    /**
-     * Check if gateway uses checkout redirect.
-     */
-    public function usesCheckoutRedirect(): bool
-    {
-        return $this->checkout_redirect;
-    }
-
-    /**
-     * Get the gateway's capabilities.
-     */
-    public function getCapabilities(): array
-    {
-        return $this->capabilities ?? [];
-    }
-
-    /**
-     * Get the gateway's configuration fields.
-     */
-    public function getConfigFields(): array
-    {
-        return $this->config_fields;
-    }
-
-    /**
-     * Get a configuration value (decrypted).
-     */
-    public function getConfig(string $key, $default = null): mixed
-    {
-        $credentials = $this->credentials ?? [];
-        return $credentials[$key] ?? $default;
-    }
-
-    /**
-     * Set a configuration value (automatically encrypted).
-     */
-    public function setConfig(string $key, mixed $value): void
-    {
-        $credentials = $this->credentials ?? [];
-        $credentials[$key] = $value;
-        $this->credentials = $credentials;
-    }
-
-    /**
-     * Get a configuration value with default.
-     */
-    public function getConfigValue(string $key, $default = null): mixed
-    {
-        $credentials = $this->credentials ?? [];
-        return $credentials[$key] ?? $default;
-    }
-
-    /**
-     * Set a configuration value (automatically encrypted).
-     */
-    public function setConfig(string $key, mixed $value): void
-    {
-        $credentials = $this->credentials ?? [];
-        $credentials[$key] = $value;
-        $this->credentials = $credentials;
-    }
-
-    /**
-     * Scope: only enabled gateways.
-     */
-    public function scopeEnabled($query)
-    {
-        return $query->where('enabled', true);
-    }
-
-    /**
-     * Scope: only active (enabled) gateways.
-     */
-    public function scopeActive($query)
-    {
-        return $query->where('enabled', true);
-    }
-
-    /**
-     * Scope: filter by environment.
-     */
-    public function scopeEnvironment($query, string $environment)
+    public function scopeEnvironment(Builder $query, string $environment): Builder
     {
         return $query->where('environment', $environment);
     }

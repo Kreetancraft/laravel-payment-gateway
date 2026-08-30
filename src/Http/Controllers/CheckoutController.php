@@ -6,12 +6,12 @@ namespace Kreetancraft\PaymentGateway\Http\Controllers;
 
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Http\RedirectResponse;
-use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
-use Kreetancraft\PaymentGateway\Actions\ChargePaymentAction;
-use Kreetancraft\PaymentGateway\Services\CouponService;
+use Kreetancraft\PaymentGateway\Http\Requests\ApplyCouponRequest;
+use Kreetancraft\PaymentGateway\Http\Requests\ValidateCouponRequest;
 use Kreetancraft\PaymentGateway\Models\Coupon;
+use Kreetancraft\PaymentGateway\Models\Gateway;
+use Kreetancraft\PaymentGateway\Services\CouponService;
 
 class CheckoutController extends Controller
 {
@@ -19,54 +19,35 @@ class CheckoutController extends Controller
         private readonly CouponService $couponService,
     ) {}
 
-    public function __invoke(Request $request): View
+    public function __invoke(): View
     {
-        $enabledGateways = $this->getEnabledGateways();
-        
-        if (empty($enabledGateways)) {
+        $enabledGateways = Gateway::query()->enabled()->get();
+
+        if ($enabledGateways->isEmpty()) {
             abort(404, 'No payment gateways are enabled.');
         }
 
-        // Check if coupon code is provided in query string
-        $couponCode = $request->query('coupon');
-        $coupon = null;
-        
-        if ($couponCode) {
-            $coupon = Coupon::where('code', $couponCode)->first();
-            if (!$coupon || !$coupon->isValid()) {
-                session()->flash('coupon_error', 'Invalid or expired coupon code.');
-            }
-        }
-
-        $gateways = collect(config('payment-gateway.gateways', []))
-            ->filter(fn ($config, $code) => !empty(config("payment-gateway.gateways.{$code}.enabled", true)))
-            ->map(fn ($config, $code) => [
-                'code' => $code,
-                'label' => $config['label'] ?? $code,
-                'icon' => $config['icon'] ?? '',
-                'currencies' => $config['currencies'] ?? [],
-            ])
-            ->values();
+        $gateways = $enabledGateways->map(fn (Gateway $gw): array => [
+            'code' => $gw->code,
+            'label' => $gw->getLabel(),
+            'icon' => $gw->getIcon(),
+            'currencies' => $gw->getSupportedCurrencies(),
+        ])->values();
 
         return view('payment-gateway::livewire.checkout', [
             'gateways' => $gateways,
-            'coupon' => $coupon,
         ]);
     }
 
-    public function applyCoupon(Request $request): \Illuminate\Http\JsonResponse
+    public function applyCoupon(ApplyCouponRequest $request): JsonResponse
     {
-        $request->validate([
-            'code' => ['required', 'string', new ValidCouponCode()],
-            'amount_cents' => ['required', 'integer', 'min:1'],
-            'currency' => ['required', 'string', 'size:3'],
-        ]);
+        $validated = $request->validated();
 
-        $result = app(\Kreetancraft\PaymentGateway\Services\CouponService::class)->apply(
-            $request->string('code'),
+        $result = $this->couponService->apply(
+            $validated['code'],
             auth()->id(),
-            $request->integer('amount_cents'),
-            $request->string('currency')
+            (int) $validated['amount_cents'],
+            $validated['currency']
         );
 
         if (! $result['success']) {
@@ -86,17 +67,13 @@ class CheckoutController extends Controller
         ]);
     }
 
-    public function validateCoupon(Request $request): \Illuminate\Http\JsonResponse
+    public function validateCoupon(ValidateCouponRequest $request): JsonResponse
     {
-        $request->validate([
-            'code' => ['required', 'string', new ValidCouponCode()],
-            'amount_cents' => ['nullable', 'integer', 'min:1'],
-            'currency' => ['nullable', 'string', 'size:3'],
-        );
+        $validated = $request->validated();
 
-        $coupon = Coupon::where('code', $request->string('code'))->first();
+        $coupon = Coupon::where('code', $validated['code'])->first();
 
-        if (!$coupon) {
+        if (! $coupon) {
             return response()->json([
                 'valid' => false,
                 'message' => 'Invalid coupon code.',
@@ -106,7 +83,7 @@ class CheckoutController extends Controller
         $valid = $coupon->isValid(
             auth()->id(),
             $request->integer('amount_cents'),
-            $request->string('currency', 'USD')
+            $request->string('currency', 'USD')->toString()
         );
 
         return response()->json([

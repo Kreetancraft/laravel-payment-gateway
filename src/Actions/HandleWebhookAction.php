@@ -7,8 +7,10 @@ namespace Kreetancraft\PaymentGateway\Actions;
 use Illuminate\Support\Facades\Log;
 use Kreetancraft\PaymentGateway\Contracts\GatewayResolver;
 use Kreetancraft\PaymentGateway\Data\WebhookResult;
+use Kreetancraft\PaymentGateway\Enums\PaymentStatus;
 use Kreetancraft\PaymentGateway\Models\Payment;
 use Lorisleiva\Actions\Concerns\AsAction;
+use Stripe\Webhook;
 
 class HandleWebhookAction
 {
@@ -19,8 +21,8 @@ class HandleWebhookAction
     ) {}
 
     /**
-     * @param array<string, mixed> $payload
-     * @param array<string, mixed> $headers
+     * @param  array<string, mixed>  $payload
+     * @param  array<string, mixed>  $headers
      */
     public function handle(string $gateway, array $payload, array $headers = []): WebhookResult
     {
@@ -66,8 +68,8 @@ class HandleWebhookAction
     }
 
     /**
-     * @param array<string, mixed> $payload
-     * @param array<string, mixed> $headers
+     * @param  array<string, mixed>  $payload
+     * @param  array<string, mixed>  $headers
      */
     protected function verifySignature(string $gateway, array $payload, array $headers): bool
     {
@@ -92,7 +94,9 @@ class HandleWebhookAction
                 $webhookSecret = (string) config('payment-gateway.gateways.stripe.webhook_secret', config('payment-gateway.webhook.secret', ''));
 
                 if (blank($webhookSecret)) {
-                    return true;
+                    Log::warning("Webhook signature verification skipped for gateway [{$gateway}]: webhook secret is not configured.");
+
+                    return false;
                 }
 
                 return false;
@@ -101,12 +105,14 @@ class HandleWebhookAction
             $secret = (string) config('payment-gateway.gateways.stripe.webhook_secret', config('payment-gateway.webhook.secret', ''));
 
             if (blank($secret)) {
-                return true;
+                Log::warning("Stripe webhook secret is not configured for gateway [{$gateway}].");
+
+                return false;
             }
 
             try {
                 $rawPayload = json_encode($payload, JSON_THROW_ON_ERROR);
-                \Stripe\Webhook::constructEvent($rawPayload, (string) $signature, $secret);
+                Webhook::constructEvent($rawPayload, (string) $signature, $secret);
 
                 return true;
             } catch (\Throwable) {
@@ -121,7 +127,9 @@ class HandleWebhookAction
         $secret = (string) config('payment-gateway.webhook.secret', '');
 
         if (blank($secret)) {
-            return true;
+            Log::warning("Webhook secret is not configured for gateway [{$gateway}].");
+
+            return false;
         }
 
         $provided = $normalizedHeaders['x-webhook-signature'] ?? $normalizedHeaders['signature'] ?? $normalizedHeaders['x-signature'] ?? null;
@@ -156,22 +164,22 @@ class HandleWebhookAction
         }
 
         $statusMap = [
-            'succeeded' => 'succeeded',
-            'completed' => 'succeeded',
-            'paid' => 'succeeded',
-            'success' => 'succeeded',
-            'failed' => 'failed',
-            'canceled' => 'canceled',
-            'cancelled' => 'canceled',
-            'pending' => 'pending',
-            'requires_action' => 'requires_action',
+            'succeeded' => PaymentStatus::Succeeded,
+            'completed' => PaymentStatus::Succeeded,
+            'paid' => PaymentStatus::Succeeded,
+            'success' => PaymentStatus::Succeeded,
+            'failed' => PaymentStatus::Failed,
+            'canceled' => PaymentStatus::Canceled,
+            'cancelled' => PaymentStatus::Canceled,
+            'pending' => PaymentStatus::Pending,
+            'requires_action' => PaymentStatus::RequiresAction,
         ];
 
-        $newStatus = $statusMap[strtolower($result->status)] ?? $result->status;
+        $newStatus = $statusMap[strtolower((string) $result->status)] ?? PaymentStatus::tryFrom((string) $result->status) ?? PaymentStatus::Pending;
 
         $payment->status = $newStatus;
 
-        if (in_array($newStatus, ['succeeded', 'completed', 'paid'], true)) {
+        if ($newStatus === PaymentStatus::Succeeded) {
             $payment->paid_at = $payment->paid_at ?? now();
         }
 

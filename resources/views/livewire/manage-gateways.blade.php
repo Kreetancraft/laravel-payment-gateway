@@ -66,8 +66,8 @@
     <flux:modal wire:model="showEditModal" class="md:w-[640px]">
         <div class="space-y-6">
             <div>
-                <flux:heading size="lg">Edit {{ $editingCode }}</flux:heading>
-                <flux:text variant="muted">Changes apply to runtime config. Update config/payment-gateway.php to persist.</flux:text>
+                <flux:heading size="lg">Edit {{ $editingLabel ?: $editingCode }}</flux:heading>
+                <flux:text variant="muted">Credentials and settings are securely encrypted and stored directly in your database.</flux:text>
             </div>
 
             <flux:field>

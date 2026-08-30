@@ -8,13 +8,11 @@ use Kreetancraft\PaymentGateway\Data\PaymentResult;
 use Kreetancraft\PaymentGateway\Data\RefundResult;
 use Kreetancraft\PaymentGateway\Data\VerificationResult;
 use Kreetancraft\PaymentGateway\Data\WebhookResult;
-use Kreetancraft\PaymentGateway\Models\Gateway;
-use Stripe\Stripe;
 use Stripe\Exception\ApiErrorException;
 use Stripe\PaymentIntent;
 use Stripe\Refund;
+use Stripe\Stripe;
 use Stripe\Webhook;
-use Stripe\WebhookSignature;
 
 class StripeGateway extends AbstractGateway
 {
@@ -91,7 +89,7 @@ class StripeGateway extends AbstractGateway
         try {
             Stripe::setApiKey($this->gateway->getStripeSecretKey());
 
-            $paymentIntent = \Stripe\PaymentIntent::retrieve($data['payment_intent_id'] ?? $data['transaction_id'] ?? '');
+            $paymentIntent = PaymentIntent::retrieve($data['payment_intent_id'] ?? $data['transaction_id'] ?? '');
 
             return VerificationResult::success(
                 transactionId: $paymentIntent->id,
@@ -121,7 +119,7 @@ class StripeGateway extends AbstractGateway
             $eventType = $event->type;
             $paymentIntent = $event->data->object ?? null;
 
-            if (!$paymentIntent) {
+            if (! $paymentIntent) {
                 return WebhookResult::failure($eventType, '', 'No payment intent in webhook');
             }
 

@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace Kreetancraft\PaymentGateway\Livewire;
 
 use Illuminate\Contracts\View\View;
-use Livewire\Component;
 use Kreetancraft\PaymentGateway\Models\Gateway;
+use Livewire\Component;
 
 class ManageGateways extends Component
 {
@@ -34,7 +34,7 @@ class ManageGateways extends Component
 
         $this->clearGatewayCache();
 
-        session()->flash('gateway_message', "Gateway [{$code}] " . ($gateway->enabled ? 'enabled' : 'disabled') . '.');
+        session()->flash('gateway_message', "Gateway [{$code}] ".($gateway->enabled ? 'enabled' : 'disabled').'.');
     }
 
     public function openEditGatewayModal(string $code): void
@@ -50,7 +50,8 @@ class ManageGateways extends Component
         $this->fieldValues = [];
 
         foreach ($this->configFields as $key => $field) {
-            $this->fieldValues[$key] = (string) ($gateway->getCredential($key) ?? $field['default'] ?? '');
+            $fieldKey = is_array($field) ? ($field['key'] ?? (string) $key) : (string) $key;
+            $this->fieldValues[$fieldKey] = (string) ($gateway->getCredential($fieldKey) ?? ($field['default'] ?? ''));
         }
 
         $this->showEditModal = true;
