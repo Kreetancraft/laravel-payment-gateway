@@ -3,20 +3,17 @@
     'subtitle' => null,
 ])
 
-<flux:card class="space-y-4">
-    @if ($title || $subtitle)
+<flux:card {{ $attributes->merge(['class' => 'space-y-6']) }}>
+    @if ($title)
         <div class="space-y-1">
-            @if ($title)
-                <flux:heading size="lg">{{ $title }}</flux:heading>
-            @endif
+            <flux:heading size="lg">{{ $title }}</flux:heading>
             @if ($subtitle)
-                <flux:subheading class="text-xs text-zinc-500">{{ $subtitle }}</flux:subheading>
+                <flux:text size="sm" variant="subtle">{{ $subtitle }}</flux:text>
             @endif
         </div>
-        <flux:separator variant="subtle" />
     @endif
 
-    <div class="space-y-4">
+    <div class="space-y-5">
         {{ $slot }}
     </div>
 </flux:card>

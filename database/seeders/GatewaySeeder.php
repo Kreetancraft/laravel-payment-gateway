@@ -18,7 +18,7 @@ class GatewaySeeder extends Seeder
             ['code' => 'stripe'],
             [
                 'label' => 'Pay with Stripe',
-                'icon' => 'https://js.stripe.com/v3/stripe-logo.svg',
+                'icon' => 'https://cdn.brandfetch.io/idxAg10C0L/theme/dark/logo.svg?c=1dxbfHSJFAPEGdCLU4o5B',
                 'enabled' => true,
                 'class' => StripeGateway::class,
                 'currencies' => ['USD', 'EUR', 'GBP', 'INR', 'NPR', 'AUD', 'CAD'],
@@ -62,7 +62,7 @@ class GatewaySeeder extends Seeder
             ['code' => 'himalayan'],
             [
                 'label' => 'Himalayan Bank (2C2P PACO)',
-                'icon' => 'https://www.himalayanbank.com/themes/himalayan/assets/ico/hbl-icon.png',
+                'icon' => 'https://cdn.brandfetch.io/id2P9wxe6-/w/283/h/283/theme/dark/icon.jpeg?c=1dxbfHSJFAPEGdCLU4o5B',
                 'enabled' => false,
                 'class' => HimalayanBankGateway::class,
                 'currencies' => ['NPR', 'USD', 'THB'],

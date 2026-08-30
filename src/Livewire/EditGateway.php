@@ -47,7 +47,13 @@ class EditGateway extends Component
         $this->fieldValues = [];
         foreach ($this->configFields as $key => $field) {
             $fieldKey = is_array($field) ? ($field['key'] ?? (string) $key) : (string) $key;
-            $this->fieldValues[$fieldKey] = (string) ($gateway->getCredential($fieldKey) ?? ($field['default'] ?? ''));
+            $rawVal = $gateway->getCredential($fieldKey) ?? ($field['default'] ?? '');
+
+            if (is_array($rawVal)) {
+                $this->fieldValues[$fieldKey] = implode(', ', $rawVal);
+            } else {
+                $this->fieldValues[$fieldKey] = (string) ($rawVal ?? '');
+            }
         }
     }
 

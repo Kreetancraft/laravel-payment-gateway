@@ -46,7 +46,7 @@ return [
         'stripe' => [
             'class' => StripeGateway::class,
             'label' => 'Pay with Stripe',
-            'icon' => 'https://js.stripe.com/v3/stripe-logo.svg',
+            'icon' => 'https://cdn.brandfetch.io/idxAg10C0L/theme/dark/logo.svg?c=1dxbfHSJFAPEGdCLU4o5B',
             'currencies' => ['USD', 'EUR', 'GBP', 'INR', 'NPR', 'AUD', 'CAD'],
             'supports_subscriptions' => false,
             'checkout_redirect' => false,
@@ -79,7 +79,7 @@ return [
         'himalayan' => [
             'class' => HimalayanBankGateway::class,
             'label' => 'Himalayan Bank (2C2P PACO)',
-            'icon' => 'https://www.himalayanbank.com/themes/himalayan/assets/ico/hbl-icon.png',
+            'icon' => 'https://cdn.brandfetch.io/id2P9wxe6-/w/283/h/283/theme/dark/icon.jpeg?c=1dxbfHSJFAPEGdCLU4o5B',
             'currencies' => ['NPR', 'USD', 'THB'],
             'supports_subscriptions' => false,
             'checkout_redirect' => true,
