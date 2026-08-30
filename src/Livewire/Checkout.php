@@ -8,7 +8,6 @@ use Illuminate\Contracts\View\View;
 use Illuminate\Support\Facades\Route;
 use Kreetancraft\PaymentGateway\Actions\ChargePaymentAction;
 use Kreetancraft\PaymentGateway\Contracts\GatewayResolver;
-use Kreetancraft\PaymentGateway\Data\PaymentResult;
 use Kreetancraft\PaymentGateway\Models\Coupon;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Url;
@@ -17,16 +16,23 @@ use Livewire\Component;
 class Checkout extends Component
 {
     #[Url]
+    public int $step = 1;
+
+    #[Url]
     public ?string $gateway = null;
 
     #[Url]
-    public ?int $amount = null;
+    public int|float|string|null $amount = null;
 
     #[Url]
     public ?string $currency = null;
 
     #[Url]
     public ?string $coupon = null;
+
+    public string $orderTitle = '';
+
+    public string $description = '';
 
     public string $customerEmail = '';
 
@@ -42,6 +48,13 @@ class Checkout extends Component
 
     public string $couponCode = '';
 
+    public ?string $returnUrl = null;
+
+    /**
+     * @var array<string, mixed>
+     */
+    public array $metadata = [];
+
     public ?string $errorMessage = null;
 
     public bool $isRedirecting = false;
@@ -52,131 +65,240 @@ class Checkout extends Component
 
     public bool $hasFreeShipping = false;
 
-    public function mount(?string $gateway = null): void
-    {
-        $this->loadInitialValues($gateway);
-        $this->selectGatewayIfOnlyOne();
-        $this->fillAmountFromUrl();
-        $this->applyCouponFromUrl();
-        $this->autoChargeIfSingleGateway();
+    /**
+     * @param  array<string, mixed>  $metadata
+     */
+    public function mount(
+        ?string $gateway = null,
+        int|float|string|null $amount = null,
+        ?string $currency = null,
+        ?string $customerName = null,
+        ?string $customerEmail = null,
+        ?string $customerPhone = null,
+        ?string $orderTitle = null,
+        ?string $description = null,
+        ?string $coupon = null,
+        ?int $step = null,
+        ?string $returnUrl = null,
+        array $metadata = [],
+    ): void {
+        $this->loadInitialValues(
+            gateway: $gateway,
+            amount: $amount,
+            currency: $currency,
+            customerName: $customerName,
+            customerEmail: $customerEmail,
+            customerPhone: $customerPhone,
+            orderTitle: $orderTitle,
+            description: $description,
+            coupon: $coupon,
+            step: $step,
+            returnUrl: $returnUrl,
+            metadata: $metadata,
+        );
+
+        $this->autoSelectGateway();
+        $this->applyInitialCoupon();
+        $this->determineStartingStep($step);
     }
 
-    private function loadInitialValues(?string $gateway): void
-    {
-        $this->couponCode = request()->query('coupon', '');
-        $this->gateway = $gateway;
+    /**
+     * @param  array<string, mixed>  $metadata
+     */
+    private function loadInitialValues(
+        ?string $gateway,
+        int|float|string|null $amount,
+        ?string $currency,
+        ?string $customerName,
+        ?string $customerEmail,
+        ?string $customerPhone,
+        ?string $orderTitle,
+        ?string $description,
+        ?string $coupon,
+        ?int $step,
+        ?string $returnUrl,
+        array $metadata,
+    ): void {
+        $this->gateway = $gateway ?: request()->query('gateway', $this->gateway);
+        $this->selectedGateway = (string) $this->gateway;
 
+        // Amount parsing (handles cents integer, float string like "150.00", or URL param)
+        $rawAmount = $amount ?? request()->query('amount', $this->amount);
+        if ($rawAmount !== null && $rawAmount !== '') {
+            if (is_numeric($rawAmount)) {
+                $numeric = (float) $rawAmount;
+                // If larger than 1000 and whole integer with no decimal, or explicit cents
+                if (is_int($rawAmount) && $rawAmount >= 100 && ! str_contains((string) $rawAmount, '.')) {
+                    $this->amountInput = number_format($rawAmount / 100, 2, '.', '');
+                } else {
+                    $this->amountInput = number_format($numeric, 2, '.', '');
+                }
+            }
+        }
+
+        // Currency
+        $rawCurrency = $currency ?: request()->query('currency', $this->currency);
+        if (filled($rawCurrency)) {
+            $this->currencyInput = strtoupper(trim((string) $rawCurrency));
+        }
+
+        // Customer details
+        if (filled($customerName)) {
+            $this->customerName = $customerName;
+        }
+        if (filled($customerEmail)) {
+            $this->customerEmail = $customerEmail;
+        }
+        if (filled($customerPhone)) {
+            $this->customerPhone = $customerPhone;
+        }
+
+        // Order & Metadata
+        $this->orderTitle = $orderTitle ?: request()->query('order_title', 'Order Payment');
+        $this->description = $description ?: request()->query('description', '');
+        $this->returnUrl = $returnUrl ?: request()->query('return_url', null);
+        $this->metadata = $metadata;
+
+        // Coupon
+        $this->couponCode = (string) ($coupon ?: request()->query('coupon', $this->coupon ?? ''));
+    }
+
+    private function determineStartingStep(?int $explicitStep): void
+    {
+        if ($explicitStep !== null && $explicitStep >= 1 && $explicitStep <= 3) {
+            $this->step = $explicitStep;
+
+            return;
+        }
+
+        // If URL provided step
+        $urlStep = (int) request()->query('step', 0);
+        if ($urlStep >= 1 && $urlStep <= 3) {
+            $this->step = $urlStep;
+
+            return;
+        }
+
+        $hasAmount = $this->getAmountInCents() > 0;
+        $hasCustomer = filled($this->customerEmail) && filter_var($this->customerEmail, FILTER_VALIDATE_EMAIL) !== false;
+
+        if ($hasAmount && $hasCustomer) {
+            $this->step = 3; // Jump straight to payment & review
+        } elseif ($hasAmount) {
+            $this->step = 2; // Jump to customer details
+        } else {
+            $this->step = 1;
+        }
+    }
+
+    private function autoSelectGateway(): void
+    {
         $enabled = $this->getEnabledGatewayCodes();
 
         if (empty($enabled)) {
-            abort(404, 'No payment gateways are enabled.');
+            return;
         }
 
-        if (filled($gateway)) {
-            $this->selectedGateway = $gateway;
+        if (filled($this->selectedGateway) && in_array($this->selectedGateway, $enabled, true)) {
+            return;
         }
+
+        // Match first gateway supporting the currency
+        $resolver = app(GatewayResolver::class);
+        foreach ($enabled as $code) {
+            $cfg = $resolver->getGatewayConfig($code);
+            if ($cfg && $cfg->supportsCurrency($this->currencyInput)) {
+                $this->selectedGateway = $code;
+
+                return;
+            }
+        }
+
+        $this->selectedGateway = $enabled[0];
     }
 
-    private function selectGatewayIfOnlyOne(): void
+    private function applyInitialCoupon(): void
     {
-        $enabled = $this->getEnabledGatewayCodes();
-
-        if (blank($this->selectedGateway) && count($enabled) === 1) {
-            $this->selectedGateway = $enabled[0];
-            $this->gateway = $enabled[0];
-        }
-
-        if (filled($this->gateway) && blank($this->selectedGateway)) {
-            $this->selectedGateway = $this->gateway;
-        }
-    }
-
-    private function fillAmountFromUrl(): void
-    {
-        if ($this->amount !== null) {
-            $this->amountInput = number_format($this->amount / 100, 2, '.', '');
-        }
-
-        if (filled($this->currency)) {
-            $this->currencyInput = strtoupper($this->currency);
-        }
-    }
-
-    private function applyCouponFromUrl(): void
-    {
-        if ($this->coupon) {
-            $this->couponCode = $this->coupon;
+        if (filled($this->couponCode)) {
             $this->applyCoupon();
         }
     }
 
-    private function autoChargeIfSingleGateway(): void
+    public function nextStep(): void
     {
-        $enabled = $this->getEnabledGatewayCodes();
+        $this->clearError();
 
-        if (count($enabled) === 1 && $this->hasAmountAndCurrency()) {
-            $this->chargeCustomer();
+        if ($this->step === 1) {
+            if ($this->getAmountInCents() <= 0) {
+                $this->showError('Please enter a valid amount greater than 0.');
+
+                return;
+            }
+
+            if (strlen($this->getCurrencyCode()) !== 3) {
+                $this->showError('Please select a valid 3-letter currency code.');
+
+                return;
+            }
+
+            $this->autoSelectGateway();
+            $this->step = 2;
+
+            return;
+        }
+
+        if ($this->step === 2) {
+            if (blank($this->customerEmail) || ! filter_var($this->customerEmail, FILTER_VALIDATE_EMAIL)) {
+                $this->showError('Please provide a valid email address.');
+
+                return;
+            }
+
+            $this->step = 3;
         }
     }
 
-    private function hasAmountAndCurrency(): bool
+    public function previousStep(): void
     {
-        return $this->amount !== null && $this->amount > 0 && filled($this->currency);
+        $this->clearError();
+        $this->step = max(1, $this->step - 1);
     }
 
-    private function getEnabledGatewayCodes(): array
+    public function goToStep(int $targetStep): void
     {
-        return app(GatewayResolver::class)->getEnabledGateways();
-    }
+        if ($targetStep < 1 || $targetStep > 3) {
+            return;
+        }
 
-    #[Computed]
-    public function enabledGateways(): array
-    {
-        $resolver = app(GatewayResolver::class);
-        $codes = $resolver->getEnabledGateways();
+        if ($targetStep > 1 && $this->getAmountInCents() <= 0) {
+            $this->showError('Please complete Step 1 before continuing.');
 
-        return collect($codes)->map(function (string $code) use ($resolver): array {
-            $config = $resolver->getGatewayConfig($code);
+            return;
+        }
 
-            if ($config === null) {
-                return ['code' => $code, 'label' => $code, 'icon' => '', 'currencies' => []];
-            }
+        if ($targetStep === 3 && (blank($this->customerEmail) || ! filter_var($this->customerEmail, FILTER_VALIDATE_EMAIL))) {
+            $this->showError('Please provide a valid email in Step 2 before proceeding to payment.');
 
-            return [
-                'code' => $config->getCode(),
-                'label' => $config->getLabel(),
-                'icon' => $config->getIcon(),
-                'currencies' => $config->getSupportedCurrencies(),
-                'checkout_redirect' => $config->checkoutRedirect(),
-            ];
-        })->all();
-    }
+            return;
+        }
 
-    #[Computed]
-    public function isSingleGateway(): bool
-    {
-        return count($this->enabledGateways) === 1;
-    }
-
-    public function updatedSelectedGateway(string $value): void
-    {
-        $this->gateway = $value;
-        $this->errorMessage = null;
+        $this->clearError();
+        $this->step = $targetStep;
     }
 
     public function applyCoupon(): void
     {
         $this->clearError();
 
-        if ($this->isCouponCodeEmpty()) {
+        if (blank($this->couponCode)) {
             $this->showError('Please enter a coupon code.');
 
             return;
         }
 
-        $coupon = $this->findCouponByCode($this->couponCode);
+        $coupon = Coupon::where('code', trim($this->couponCode))->first();
 
-        if (! $this->isCouponValid($coupon)) {
+        if (! $coupon) {
             $this->showError('Invalid or expired coupon code.');
 
             return;
@@ -184,8 +306,8 @@ class Checkout extends Component
 
         $amountCents = $this->getAmountInCents();
 
-        if (! $this->isValidAmount($amountCents)) {
-            $this->showError('Please enter a valid amount.');
+        if ($amountCents <= 0) {
+            $this->showError('Please enter a valid order amount first.');
 
             return;
         }
@@ -200,51 +322,16 @@ class Checkout extends Component
 
         $discount = $coupon->calculateDiscount($amountCents);
 
-        if ($discount <= 0) {
-            $this->showError('This coupon does not apply to your order amount.');
+        if ($discount <= 0 && ! $coupon->is_free_shipping) {
+            $this->showError('This coupon does not apply to this amount.');
 
             return;
         }
 
-        $this->saveAppliedCoupon($coupon, $discount);
-    }
-
-    private function isCouponCodeEmpty(): bool
-    {
-        return blank($this->couponCode);
-    }
-
-    private function findCouponByCode(string $code): ?Coupon
-    {
-        return Coupon::where('code', $code)->first();
-    }
-
-    private function isCouponValid(?Coupon $coupon): bool
-    {
-        if (! $coupon) {
-            return false;
-        }
-
-        return $coupon->isValid(auth()->id(), $this->amount, $this->currencyInput);
-    }
-
-    private function isValidAmount(?int $cents): bool
-    {
-        return $cents !== null && $cents > 0;
-    }
-
-    private function getCurrencyCode(): string
-    {
-        return strtoupper(trim($this->currencyInput ?: $this->currency ?? 'USD'));
-    }
-
-    private function saveAppliedCoupon(Coupon $coupon, int $discount): void
-    {
         $this->appliedCouponCode = $coupon->code;
         $this->appliedDiscountCents = $discount;
-        $this->hasFreeShipping = $coupon->is_free_shipping;
+        $this->hasFreeShipping = (bool) $coupon->is_free_shipping;
         $this->couponCode = '';
-        session()->flash('coupon_message', "Coupon {$coupon->code} applied! Discount: ".number_format($discount / 100, 2));
     }
 
     public function removeCoupon(): void
@@ -252,6 +339,48 @@ class Checkout extends Component
         $this->appliedCouponCode = null;
         $this->appliedDiscountCents = 0;
         $this->hasFreeShipping = false;
+    }
+
+    public function updatedCurrencyInput(): void
+    {
+        $this->currencyInput = strtoupper(trim($this->currencyInput));
+        $this->autoSelectGateway();
+        $this->recalculateCouponIfApplied();
+    }
+
+    public function updatedAmountInput(): void
+    {
+        $this->recalculateCouponIfApplied();
+    }
+
+    private function recalculateCouponIfApplied(): void
+    {
+        if (filled($this->appliedCouponCode)) {
+            $coupon = Coupon::where('code', $this->appliedCouponCode)->first();
+            $amountCents = $this->getAmountInCents();
+
+            if ($coupon && $amountCents > 0 && $coupon->canApply(auth()->id(), $amountCents, $this->currencyInput)) {
+                $this->appliedDiscountCents = $coupon->calculateDiscount($amountCents);
+            } else {
+                $this->removeCoupon();
+            }
+        }
+    }
+
+    public function getAmountInCents(): int
+    {
+        $clean = trim($this->amountInput);
+
+        if (! is_numeric($clean)) {
+            return 0;
+        }
+
+        return (int) round((float) $clean * 100);
+    }
+
+    public function getCurrencyCode(): string
+    {
+        return strtoupper(trim($this->currencyInput ?: 'USD'));
     }
 
     #[Computed]
@@ -263,7 +392,7 @@ class Checkout extends Component
     #[Computed]
     public function formattedAmount(): string
     {
-        return number_format($this->finalAmountCents() / 100, 2);
+        return number_format($this->finalAmountCents / 100, 2);
     }
 
     #[Computed]
@@ -272,137 +401,114 @@ class Checkout extends Component
         return number_format($this->appliedDiscountCents / 100, 2);
     }
 
+    /**
+     * @return array<int, array{code: string, label: string, icon: string, currencies: array<string>, checkout_redirect: bool}>
+     */
+    #[Computed]
+    public function enabledGateways(): array
+    {
+        $resolver = app(GatewayResolver::class);
+        $codes = $resolver->getEnabledGateways();
+
+        return collect($codes)->map(function (string $code) use ($resolver): array {
+            $config = $resolver->getGatewayConfig($code);
+
+            if ($config === null) {
+                return ['code' => $code, 'label' => $code, 'icon' => '', 'currencies' => [], 'checkout_redirect' => false];
+            }
+
+            return [
+                'code' => $config->getCode(),
+                'label' => $config->getLabel(),
+                'icon' => $config->getIcon(),
+                'currencies' => $config->getSupportedCurrencies(),
+                'checkout_redirect' => $config->checkoutRedirect(),
+            ];
+        })->all();
+    }
+
+    /**
+     * @return array<string>
+     */
+    private function getEnabledGatewayCodes(): array
+    {
+        return app(GatewayResolver::class)->getEnabledGateways();
+    }
+
     public function charge(): mixed
     {
         $this->clearError();
         $this->isRedirecting = false;
 
-        if (! $this->hasSelectedGateway()) {
+        if (blank($this->selectedGateway)) {
             $this->showError('Please select a payment gateway.');
 
             return null;
         }
 
-        $amountCents = $this->getAmountInCents();
+        $amountCents = $this->finalAmountCents;
 
-        if (! $this->isValidAmount($amountCents)) {
-            $this->showError('Please enter a valid amount.');
-
-            return null;
-        }
-
-        if (! $this->isValidCurrency()) {
-            $this->showError('Currency must be a 3-letter code.');
+        if ($amountCents <= 0) {
+            $this->showError('Payable amount must be greater than zero.');
 
             return null;
         }
 
-        if (! $this->isValidEmail()) {
-            $this->showError('Please enter a valid email address.');
+        if (blank($this->customerEmail) || ! filter_var($this->customerEmail, FILTER_VALIDATE_EMAIL)) {
+            $this->showError('Please provide a valid customer email.');
+            $this->step = 2;
 
             return null;
         }
 
-        $result = $this->sendChargeRequest($amountCents);
-
-        if (! $result->success) {
-            $this->showError($result->errorMessage ?? 'Payment failed. Please try again.');
-
-            return null;
-        }
-
-        return $this->handleSuccessfulCharge($result);
-    }
-
-    private function hasSelectedGateway(): bool
-    {
-        return filled($this->selectedGateway);
-    }
-
-    private function isValidCurrency(): bool
-    {
-        return strlen($this->getCurrencyCode()) === 3;
-    }
-
-    private function isValidEmail(): bool
-    {
-        if (blank($this->customerEmail)) {
-            return true;
-        }
-
-        return filter_var($this->customerEmail, FILTER_VALIDATE_EMAIL) !== false;
-    }
-
-    private function sendChargeRequest(int $amountCents): PaymentResult
-    {
-        $payload = $this->buildChargePayload($amountCents);
-
-        return ChargePaymentAction::run($payload);
-    }
-
-    private function buildChargePayload(int $amountCents): array
-    {
-        return [
+        $payload = [
             'amount_cents' => $amountCents,
             'currency' => $this->getCurrencyCode(),
             'gateway' => $this->selectedGateway,
-            'customer_email' => $this->customerEmail ?: null,
+            'customer_email' => $this->customerEmail,
             'customer_name' => $this->customerName ?: null,
             'customer_phone' => $this->customerPhone ?: null,
-            'description' => "Payment via {$this->selectedGateway}",
-            'metadata' => [
-                'source' => 'livewire_checkout',
+            'description' => $this->description ?: "Payment for {$this->orderTitle}",
+            'return_url' => $this->returnUrl,
+            'metadata' => array_merge($this->metadata, [
+                'order_title' => $this->orderTitle,
                 'original_amount_cents' => $this->getAmountInCents(),
                 'discount_cents' => $this->appliedDiscountCents,
                 'applied_coupon' => $this->appliedCouponCode,
                 'has_free_shipping' => $this->hasFreeShipping,
-            ],
+            ]),
         ];
-    }
 
-    private function handleSuccessfulCharge(PaymentResult $result): mixed
-    {
-        if (filled($result->redirectUrl)) {
-            $this->isRedirecting = true;
+        try {
+            $result = ChargePaymentAction::run($payload);
 
-            return $this->redirect($result->redirectUrl, navigate: false);
-        }
+            if (! $result->success) {
+                $this->showError($result->errorMessage ?? 'Payment failed. Please try again.');
 
-        session()->flash('payment_success', $result->orderReference);
-
-        $successRoute = config('payment-gateway.routes.names.success', 'payment.success');
-
-        if (Route::has($successRoute)) {
-            return $this->redirect(route($successRoute, ['reference' => $result->orderReference]), navigate: true);
-        }
-
-        return null;
-    }
-
-    private function getAmountInCents(): int
-    {
-        $cents = $this->resolveAmountCents();
-
-        return $cents ?? 0;
-    }
-
-    private function resolveAmountCents(): ?int
-    {
-        if (filled($this->amountInput)) {
-            $normalized = trim($this->amountInput);
-
-            if (! is_numeric($normalized)) {
                 return null;
             }
 
-            return (int) round((float) $normalized * 100);
-        }
+            if (filled($result->redirectUrl)) {
+                $this->isRedirecting = true;
 
-        if ($this->amount !== null && $this->amount > 0) {
-            return $this->amount;
-        }
+                return $this->redirect($result->redirectUrl, navigate: false);
+            }
 
-        return null;
+            if (filled($result->orderReference)) {
+                session()->flash('payment_success', $result->orderReference);
+                $successRoute = config('payment-gateway.routes.names.success', 'payment.success');
+
+                if (Route::has($successRoute)) {
+                    return $this->redirect(route($successRoute, ['reference' => $result->orderReference]), navigate: true);
+                }
+            }
+
+            return null;
+        } catch (\Throwable $e) {
+            $this->showError('Payment Error: '.$e->getMessage());
+
+            return null;
+        }
     }
 
     private function clearError(): void
@@ -418,6 +524,7 @@ class Checkout extends Component
     public function render(): View
     {
         return view('payment-gateway::livewire.checkout', [
+            'step' => $this->step,
             'finalAmountCents' => $this->finalAmountCents,
             'formattedAmount' => $this->formattedAmount,
             'formattedDiscount' => $this->formattedDiscount,

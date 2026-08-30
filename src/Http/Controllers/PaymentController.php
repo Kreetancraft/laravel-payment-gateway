@@ -31,6 +31,14 @@ class PaymentController extends Controller
         ]);
     }
 
+    public function failed(Request $request): View
+    {
+        return view('payment-gateway::failed', [
+            'payload' => $request->all(),
+            'errorMessage' => $request->query('message', 'The transaction could not be completed by the payment provider.'),
+        ]);
+    }
+
     public function choose(Request $request): View
     {
         return view('payment-gateway::choose', [

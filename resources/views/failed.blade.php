@@ -1,13 +1,13 @@
-<x-payment-gateway::layout :title="__('Payment Cancelled')">
-    <flux:card class="space-y-6 text-center border-2 border-amber-500/20">
-        <div class="flex size-16 mx-auto items-center justify-center rounded-full bg-amber-100 text-amber-600 dark:bg-amber-950 dark:text-amber-400">
-            <flux:icon icon="x-circle" class="size-9" />
+<x-payment-gateway::layout :title="__('Payment Failed')">
+    <flux:card class="space-y-6 text-center border-2 border-rose-500/20">
+        <div class="flex size-16 mx-auto items-center justify-center rounded-full bg-rose-100 text-rose-600 dark:bg-rose-950 dark:text-rose-400">
+            <flux:icon icon="exclamation-triangle" class="size-9" />
         </div>
 
         <div class="space-y-1">
-            <flux:heading size="xl">{{ __('Payment Cancelled') }}</flux:heading>
+            <flux:heading size="xl">{{ __('Payment Failed') }}</flux:heading>
             <flux:text variant="subtle">
-                {{ __('You have cancelled the checkout process. No charges were made to your account.') }}
+                {{ $errorMessage ?? __('The transaction could not be completed by the payment provider.') }}
             </flux:text>
         </div>
 
@@ -25,7 +25,7 @@
                 variant="primary"
                 icon="arrow-path"
             >
-                {{ __('Try Again / Return to Checkout') }}
+                {{ __('Try Another Payment Method') }}
             </flux:button>
 
             <flux:button href="/" variant="subtle" icon="home">

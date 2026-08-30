@@ -56,6 +56,9 @@ Route::prefix($prefix)
         Route::get('cancel', [PaymentController::class, 'cancel'])
             ->name($names['cancel'] ?? 'payment.cancel');
 
+        Route::get('failed', [PaymentController::class, 'failed'])
+            ->name($names['failed'] ?? 'payment.failed');
+
         // Public/API Coupon endpoints
         Route::prefix('api-coupons')->name('coupons.')->group(function (): void {
             Route::get('/', [CouponController::class, 'listCoupons'])

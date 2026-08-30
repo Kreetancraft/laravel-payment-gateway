@@ -1,5 +1,3 @@
-<x-layouts.app>
-    <div class="max-w-xl mx-auto py-8">
-        <livewire:payment.checkout />
-    </div>
-</x-layouts.app>
+<x-payment-gateway::layout :title="__('Choose Payment Method')">
+    <livewire:payment.checkout />
+</x-payment-gateway::layout>

@@ -1,14 +1,74 @@
-<x-layouts.app>
-    <div class="max-w-xl mx-auto py-12 text-center space-y-4">
-        <flux:heading size="xl">Payment Successful</flux:heading>
-        @if(isset($result) && $result->success)
-            <flux:callout variant="success">Payment verified: {{ $result->transactionId }} — {{ $result->status }}</flux:callout>
-        @else
-            <flux:callout variant="info">Thank you for your payment.</flux:callout>
-            @if(isset($result) && !$result->success)
-                <flux:callout variant="warning">{{ $result->errorMessage }}</flux:callout>
+<x-payment-gateway::layout :title="__('Payment Successful')">
+    <flux:card class="space-y-6 border-2 border-emerald-500/30">
+        <div class="flex items-center gap-4">
+            <div class="flex size-14 items-center justify-center rounded-full bg-emerald-100 text-emerald-600 dark:bg-emerald-950 dark:text-emerald-400">
+                <flux:icon icon="check-circle" class="size-8" />
+            </div>
+            <div>
+                <flux:heading size="xl">{{ __('Payment Successful!') }}</flux:heading>
+                <flux:text variant="subtle">{{ __('Your payment has been successfully processed and verified.') }}</flux:text>
+            </div>
+        </div>
+
+        <flux:separator variant="subtle" />
+
+        <div class="grid grid-cols-2 gap-4 sm:grid-cols-3">
+            @if(isset($result) && filled($result->orderReference))
+                <div>
+                    <flux:text size="sm" variant="subtle">{{ __('Order Reference') }}</flux:text>
+                    <div class="font-mono font-semibold text-sm mt-0.5">{{ $result->orderReference }}</div>
+                </div>
             @endif
+
+            @if(isset($result) && filled($result->transactionId))
+                <div>
+                    <flux:text size="sm" variant="subtle">{{ __('Transaction ID') }}</flux:text>
+                    <div class="font-mono text-sm mt-0.5 truncate">{{ $result->transactionId }}</div>
+                </div>
+            @endif
+
+            <div>
+                <flux:text size="sm" variant="subtle">{{ __('Status') }}</flux:text>
+                <div class="mt-0.5">
+                    <flux:badge size="sm" color="emerald" icon="check-circle">
+                        {{ ucfirst($result->status ?? 'Paid') }}
+                    </flux:badge>
+                </div>
+            </div>
+
+            @if(isset($result) && $result->amount > 0)
+                <div>
+                    <flux:text size="sm" variant="subtle">{{ __('Amount Paid') }}</flux:text>
+                    <div class="font-bold text-lg text-emerald-600 dark:text-emerald-400 mt-0.5">
+                        {{ strtoupper($result->currency ?? 'USD') }} {{ number_format($result->amount, 2) }}
+                    </div>
+                </div>
+            @endif
+
+            <div>
+                <flux:text size="sm" variant="subtle">{{ __('Date') }}</flux:text>
+                <div class="text-sm mt-0.5">{{ now()->format('M j, Y H:i') }}</div>
+            </div>
+        </div>
+
+        @if(isset($result) && filled($result->errorMessage))
+            <flux:callout variant="warning" icon="exclamation-triangle">
+                {{ $result->errorMessage }}
+            </flux:callout>
         @endif
-        <flux:button :href="route(config('payment-gateway.routes.names.checkout', 'payment.checkout'))" variant="primary">Back to checkout</flux:button>
-    </div>
-</x-layouts.app>
+
+        <flux:separator variant="subtle" />
+
+        <div class="flex items-center justify-between pt-2">
+            <flux:button href="/" variant="subtle" icon="home">
+                {{ __('Return Home') }}
+            </flux:button>
+
+            @if(Route::has('admin.payment.transactions'))
+                <flux:button :href="route('admin.payment.transactions')" variant="primary" icon="banknotes">
+                    {{ __('View in Transactions') }}
+                </flux:button>
+            @endif
+        </div>
+    </flux:card>
+</x-payment-gateway::layout>
