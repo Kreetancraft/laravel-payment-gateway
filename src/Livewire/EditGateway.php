@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Kreetancraft\PaymentGateway\Livewire;
 
+use Flux\Flux;
 use Illuminate\Contracts\View\View;
 use Kreetancraft\PaymentGateway\Layout;
 use Kreetancraft\PaymentGateway\Models\Gateway;
@@ -93,7 +94,9 @@ class EditGateway extends Component
         $gateway->save();
         $this->clearGatewayCache();
 
-        session()->flash('gateway_message', "Gateway [{$gateway->label}] settings updated successfully.");
+        if (class_exists(Flux::class) && app()->bound('flux')) {
+            Flux::toast(variant: 'success', text: __('Gateway [:gateway] settings updated successfully.', ['gateway' => $gateway->label]));
+        }
 
         $this->redirect(route(config('payment-gateway.routes.names.gateways', 'admin.payment.gateways')), navigate: true);
     }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Kreetancraft\PaymentGateway\Livewire;
 
+use Flux\Flux;
 use Illuminate\Contracts\View\View;
 use Kreetancraft\PaymentGateway\Layout;
 use Kreetancraft\PaymentGateway\Models\Gateway;
@@ -26,7 +27,15 @@ class ManageGateways extends Component
 
         $this->clearGatewayCache();
 
-        session()->flash('gateway_message', "Gateway [{$gateway->label}] is now ".($gateway->enabled ? 'enabled' : 'disabled').'.');
+        if (class_exists(Flux::class) && app()->bound('flux')) {
+            Flux::toast(
+                variant: 'success',
+                text: __('Gateway [:gateway] is now :status.', [
+                    'gateway' => $gateway->label,
+                    'status' => $gateway->enabled ? 'enabled' : 'disabled',
+                ])
+            );
+        }
     }
 
     #[Title('Payment Gateways - Admin')]

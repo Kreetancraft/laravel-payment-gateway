@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Kreetancraft\PaymentGateway\Livewire;
 
+use Flux\Flux;
 use Illuminate\Contracts\View\View;
 use Kreetancraft\PaymentGateway\Actions\RefundPaymentAction;
 use Kreetancraft\PaymentGateway\Layout;
@@ -64,9 +65,13 @@ class ManageTransactions extends Component
         $result = RefundPaymentAction::run($payment);
 
         if ($result->successful()) {
-            session()->flash('transaction_message', "Refund of \${$payment->amount} processed successfully.");
+            if (class_exists(Flux::class) && app()->bound('flux')) {
+                Flux::toast(variant: 'success', text: __('Refund of $:amount processed successfully.', ['amount' => $payment->amount]));
+            }
         } else {
-            session()->flash('transaction_error', "Refund failed: {$result->errorMessage}");
+            if (class_exists(Flux::class) && app()->bound('flux')) {
+                Flux::toast(variant: 'danger', text: __('Refund failed: :error', ['error' => $result->errorMessage]));
+            }
         }
     }
 

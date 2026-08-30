@@ -33,18 +33,6 @@
 
     <flux:separator variant="subtle" />
 
-    @if (session()->has('transaction_message'))
-        <flux:callout variant="success" icon="check-circle">
-            {{ session('transaction_message') }}
-        </flux:callout>
-    @endif
-
-    @if (session()->has('transaction_error'))
-        <flux:callout variant="danger" icon="exclamation-triangle">
-            {{ session('transaction_error') }}
-        </flux:callout>
-    @endif
-
     {{-- Filters --}}
     <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
         <div class="relative w-full sm:max-w-xs">
@@ -68,7 +56,7 @@
             <flux:select.option value="himalayan">{{ __('Himalayan Bank') }}</flux:select.option>
         </flux:select>
 
-        <flux:select wire:model.live="statusFilter" class="sm:w-40">
+        <flux:select wire:model.live="statusFilter" class="sm:w-44">
             <flux:select.option value="">{{ __('All statuses') }}</flux:select.option>
             <flux:select.option value="succeeded">{{ __('Succeeded') }}</flux:select.option>
             <flux:select.option value="completed">{{ __('Completed') }}</flux:select.option>
@@ -91,87 +79,85 @@
     </div>
 
     <div wire:loading.remove.delay wire:target="search, gatewayFilter, statusFilter, sort">
-        @if ($payments->isEmpty())
-            <flux:card>
-                <x-payment-gateway::empty-state
-                    icon="banknotes"
-                    :title="__('No payment transactions found')"
-                    :description="($search || $gatewayFilter || $statusFilter) ? __('No transactions match your current filters.') : __('Transactions will appear here as customers complete checkouts.')"
-                />
-            </flux:card>
-        @else
-            <flux:table :paginate="$payments">
-                <flux:table.columns>
-                    <flux:table.column>{{ __('Reference') }}</flux:table.column>
-                    <flux:table.column>{{ __('Gateway') }}</flux:table.column>
-                    <flux:table.column>{{ __('Customer') }}</flux:table.column>
-                    <flux:table.column sortable :sorted="$sort === 'amount_cents'" wire:click="sortBy('amount_cents')">{{ __('Amount') }}</flux:table.column>
-                    <flux:table.column>{{ __('Status') }}</flux:table.column>
-                    <flux:table.column sortable :sorted="$sort === 'created_at'" wire:click="sortBy('created_at')">{{ __('Date') }}</flux:table.column>
-                    <flux:table.column />
-                </flux:table.columns>
+    @if ($payments->isEmpty())
+        <flux:card>
+            <x-payment-gateway::empty-state
+                icon="banknotes"
+                :heading="__('No payment transactions found')"
+                :description="($search || $gatewayFilter || $statusFilter) ? __('No transactions match your current filters.') : __('Transactions will appear here as customers complete checkouts.')"
+            />
+        </flux:card>
+    @else
+        <flux:table :paginate="$payments">
+            <flux:table.columns>
+                <flux:table.column>{{ __('Reference') }}</flux:table.column>
+                <flux:table.column>{{ __('Gateway') }}</flux:table.column>
+                <flux:table.column>{{ __('Customer') }}</flux:table.column>
+                <flux:table.column sortable :sorted="$sort === 'amount_cents'" wire:click="sortBy('amount_cents')">{{ __('Amount') }}</flux:table.column>
+                <flux:table.column>{{ __('Status') }}</flux:table.column>
+                <flux:table.column sortable :sorted="$sort === 'created_at'" wire:click="sortBy('created_at')">{{ __('Date') }}</flux:table.column>
+                <flux:table.column />
+            </flux:table.columns>
 
-                <flux:table.rows>
-                    @foreach ($payments as $payment)
-                        <flux:table.row wire:key="payment-{{ $payment->id }}">
-                            <flux:table.cell>
-                                <span class="font-mono font-medium text-xs">{{ $payment->reference }}</span>
-                            </flux:table.cell>
+            <flux:table.rows>
+                @foreach ($payments as $payment)
+                    <flux:table.row :key="$payment->id">
+                        <flux:table.cell>
+                            <span class="font-mono font-medium text-xs">{{ $payment->reference }}</span>
+                        </flux:table.cell>
 
-                            <flux:table.cell>
-                                <flux:badge size="sm" color="zinc">{{ ucfirst($payment->gateway) }}</flux:badge>
-                            </flux:table.cell>
+                        <flux:table.cell>
+                            <flux:badge size="sm" color="zinc">{{ ucfirst($payment->gateway) }}</flux:badge>
+                        </flux:table.cell>
 
-                            <flux:table.cell>
-                                <span class="text-sm">{{ $payment->customer_email ?? '—' }}</span>
-                            </flux:table.cell>
+                        <flux:table.cell>
+                            <span class="text-sm">{{ $payment->customer_email ?? '—' }}</span>
+                        </flux:table.cell>
 
-                            <flux:table.cell>
-                                <span class="font-medium text-sm">
-                                    {{ strtoupper($payment->currency) }} {{ number_format($payment->amount_cents / 100, 2) }}
-                                </span>
-                            </flux:table.cell>
+                        <flux:table.cell>
+                            <span class="font-medium text-sm">
+                                {{ strtoupper($payment->currency) }} {{ number_format($payment->amount_cents / 100, 2) }}
+                            </span>
+                        </flux:table.cell>
 
-                            <flux:table.cell>
-                                @php($st = $payment->status instanceof \BackedEnum ? $payment->status->value : (string) $payment->status)
-                                @if (in_array($st, ['succeeded', 'completed'], true))
-                                    <flux:badge size="sm" color="emerald" icon="check-circle">{{ __('Succeeded') }}</flux:badge>
-                                @elseif ($st === 'refunded')
-                                    <flux:badge size="sm" color="amber">{{ __('Refunded') }}</flux:badge>
-                                @elseif ($st === 'pending')
-                                    <flux:badge size="sm" color="sky">{{ __('Pending') }}</flux:badge>
-                                @else
-                                    <flux:badge size="sm" color="zinc">{{ ucfirst($st) }}</flux:badge>
-                                @endif
-                            </flux:table.cell>
+                        <flux:table.cell>
+                            @php($st = $payment->status instanceof \BackedEnum ? $payment->status->value : (string) $payment->status)
+                            @if (in_array($st, ['succeeded', 'completed'], true))
+                                <flux:badge size="sm" color="emerald" icon="check-circle">{{ __('Succeeded') }}</flux:badge>
+                            @elseif ($st === 'refunded')
+                                <flux:badge size="sm" color="amber">{{ __('Refunded') }}</flux:badge>
+                            @elseif ($st === 'pending')
+                                <flux:badge size="sm" color="sky">{{ __('Pending') }}</flux:badge>
+                            @else
+                                <flux:badge size="sm" color="zinc">{{ ucfirst($st) }}</flux:badge>
+                            @endif
+                        </flux:table.cell>
 
-                            <flux:table.cell>
-                                <flux:text size="sm" variant="subtle">{{ $payment->created_at->diffForHumans() }}</flux:text>
-                            </flux:table.cell>
+                        <flux:table.cell>
+                            <flux:text size="sm" variant="subtle">{{ $payment->created_at->diffForHumans() }}</flux:text>
+                        </flux:table.cell>
 
-                            <flux:table.cell align="end">
-                                @if (in_array($st, ['succeeded', 'completed'], true))
-                                    @can('refund', $payment)
-                                        <flux:dropdown position="bottom" align="end">
-                                            <flux:button icon="ellipsis-horizontal" variant="subtle" size="sm" />
-                                            <flux:menu>
-                                                <flux:menu.item
-                                                    wire:click="refund({{ $payment->id }})"
-                                                    icon="arrow-path-rounded-square"
-                                                    variant="danger"
-                                                    wire:confirm="{{ __('Are you sure you want to refund payment [:ref]?', ['ref' => $payment->reference]) }}"
-                                                >
-                                                    {{ __('Refund') }}
-                                                </flux:menu.item>
-                                            </flux:menu>
-                                        </flux:dropdown>
-                                    @endcan
-                                @endif
-                            </flux:table.cell>
-                        </flux:table.row>
-                    @endforeach
-                </flux:table.rows>
-            </flux:table>
-        @endif
+                        <flux:table.cell align="end">
+                            @if (in_array($st, ['succeeded', 'completed'], true))
+                                @can('refund', $payment)
+                                    <flux:dropdown position="bottom" align="end">
+                                        <flux:button icon="ellipsis-horizontal" variant="subtle" size="sm" />
+                                        <flux:menu>
+                                            <flux:menu.item
+                                                wire:click="refund({{ $payment->id }})"
+                                                icon="arrow-path-rounded-square"
+                                                variant="danger"
+                                                wire:confirm="{{ __('Are you sure you want to refund payment [:ref]?', ['ref' => $payment->reference]) }}"
+                                            >{{ __('Refund') }}</flux:menu.item>
+                                        </flux:menu>
+                                    </flux:dropdown>
+                                @endcan
+                            @endif
+                        </flux:table.cell>
+                    </flux:table.row>
+                @endforeach
+            </flux:table.rows>
+        </flux:table>
+    @endif
     </div>
 </div>

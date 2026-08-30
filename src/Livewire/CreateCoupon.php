@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Kreetancraft\PaymentGateway\Livewire;
 
+use Flux\Flux;
 use Illuminate\Contracts\View\View;
 use Illuminate\Support\Str;
 use Kreetancraft\PaymentGateway\Layout;
@@ -120,7 +121,9 @@ class CreateCoupon extends Component
             'is_free_shipping' => $this->isFreeShipping || $this->type === 'free_shipping',
         ]);
 
-        session()->flash('coupon_message', "Coupon [{$this->code}] created successfully.");
+        if (class_exists(Flux::class) && app()->bound('flux')) {
+            Flux::toast(variant: 'success', text: __('Coupon [:code] created successfully.', ['code' => $this->code]));
+        }
 
         $this->redirect(route(config('payment-gateway.routes.names.coupons', 'admin.payment.coupons')), navigate: true);
     }

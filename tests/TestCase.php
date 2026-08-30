@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Kreetancraft\PaymentGateway\Tests;
 
+use Flux\FluxServiceProvider;
 use Illuminate\Foundation\Application;
 use Kreetancraft\PaymentGateway\Providers\PaymentGatewayServiceProvider;
 use Livewire\LivewireServiceProvider;
@@ -13,10 +14,16 @@ abstract class TestCase extends BaseTestCase
 {
     protected function getPackageProviders($app): array
     {
-        return [
+        $providers = [
             LivewireServiceProvider::class,
             PaymentGatewayServiceProvider::class,
         ];
+
+        if (class_exists(FluxServiceProvider::class)) {
+            $providers[] = FluxServiceProvider::class;
+        }
+
+        return $providers;
     }
 
     protected function getEnvironmentSetUp($app): void

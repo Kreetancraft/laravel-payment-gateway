@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Kreetancraft\PaymentGateway\Livewire;
 
+use Flux\Flux;
 use Illuminate\Contracts\View\View;
 use Illuminate\Support\Str;
 use Kreetancraft\PaymentGateway\Layout;
@@ -86,7 +87,9 @@ class ManageCoupons extends Component
         $newCoupon->usage_count = 0;
         $newCoupon->save();
 
-        session()->flash('coupon_message', "Coupon duplicated as [{$newCoupon->code}].");
+        if (class_exists(Flux::class) && app()->bound('flux')) {
+            Flux::toast(variant: 'success', text: __('Coupon duplicated as [:code].', ['code' => $newCoupon->code]));
+        }
     }
 
     public function delete(int $id): void
@@ -97,7 +100,9 @@ class ManageCoupons extends Component
         $code = $coupon->code;
         $coupon->delete();
 
-        session()->flash('coupon_message', "Coupon [{$code}] deleted successfully.");
+        if (class_exists(Flux::class) && app()->bound('flux')) {
+            Flux::toast(variant: 'success', text: __('Coupon [:code] deleted successfully.', ['code' => $code]));
+        }
     }
 
     public function exportCsv(): StreamedResponse
