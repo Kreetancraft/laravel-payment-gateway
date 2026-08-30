@@ -13,14 +13,14 @@
         <flux:separator variant="subtle" />
 
         <div class="grid grid-cols-2 gap-4 sm:grid-cols-3">
-            @if(isset($result) && filled($result->orderReference))
-                <div>
-                    <flux:text size="sm" variant="subtle">{{ __('Order Reference') }}</flux:text>
-                    <div class="font-mono font-semibold text-sm mt-0.5">{{ $result->orderReference }}</div>
+            <div>
+                <flux:text size="sm" variant="subtle">{{ __('Order Reference') }}</flux:text>
+                <div class="font-mono font-semibold text-sm mt-0.5">
+                    {{ $result->reference ?? $result->transactionId ?? request('order') ?? request('orderNo') ?? request('reference') ?? '—' }}
                 </div>
-            @endif
+            </div>
 
-            @if(isset($result) && filled($result->transactionId))
+            @if(isset($result->transactionId) && filled($result->transactionId))
                 <div>
                     <flux:text size="sm" variant="subtle">{{ __('Transaction ID') }}</flux:text>
                     <div class="font-mono text-sm mt-0.5 truncate">{{ $result->transactionId }}</div>
@@ -36,7 +36,7 @@
                 </div>
             </div>
 
-            @if(isset($result) && $result->amount > 0)
+            @if(isset($result->amount) && $result->amount > 0)
                 <div>
                     <flux:text size="sm" variant="subtle">{{ __('Amount Paid') }}</flux:text>
                     <div class="font-bold text-lg text-emerald-600 dark:text-emerald-400 mt-0.5">
@@ -51,7 +51,7 @@
             </div>
         </div>
 
-        @if(isset($result) && filled($result->errorMessage))
+        @if(isset($result->errorMessage) && filled($result->errorMessage))
             <flux:callout variant="warning" icon="exclamation-triangle">
                 {{ $result->errorMessage }}
             </flux:callout>

@@ -11,12 +11,31 @@ use Illuminate\Routing\Controller;
 use Kreetancraft\PaymentGateway\Actions\RefundPaymentAction;
 use Kreetancraft\PaymentGateway\Actions\VerifyPaymentAction;
 use Kreetancraft\PaymentGateway\Contracts\GatewayResolver;
+use Kreetancraft\PaymentGateway\Enums\PaymentStatus;
+use Kreetancraft\PaymentGateway\Models\Payment;
 
 class PaymentController extends Controller
 {
     public function success(Request $request): View
     {
         $result = VerifyPaymentAction::run($request->all());
+
+        if (! $result->success) {
+            $isCancelled = in_array(strtolower($result->status), ['cancelled', 'canceled'], true);
+
+            if ($isCancelled) {
+                return view('payment-gateway::cancel', [
+                    'result' => $result,
+                    'payload' => $request->all(),
+                ]);
+            }
+
+            return view('payment-gateway::failed', [
+                'result' => $result,
+                'payload' => $request->all(),
+                'errorMessage' => $result->errorMessage ?? 'Payment could not be verified by the gateway.',
+            ]);
+        }
 
         return view('payment-gateway::success', [
             'result' => $result,
@@ -26,6 +45,14 @@ class PaymentController extends Controller
 
     public function cancel(Request $request): View
     {
+        $orderKey = (string) ($request->query('order') ?? $request->query('orderNo') ?? $request->query('reference') ?? '');
+        if (filled($orderKey)) {
+            Payment::query()
+                ->where('reference', $orderKey)
+                ->orWhere('gateway_reference', $orderKey)
+                ->update(['status' => PaymentStatus::Cancelled]);
+        }
+
         return view('payment-gateway::cancel', [
             'payload' => $request->all(),
         ]);
@@ -33,6 +60,14 @@ class PaymentController extends Controller
 
     public function failed(Request $request): View
     {
+        $orderKey = (string) ($request->query('order') ?? $request->query('orderNo') ?? $request->query('reference') ?? '');
+        if (filled($orderKey)) {
+            Payment::query()
+                ->where('reference', $orderKey)
+                ->orWhere('gateway_reference', $orderKey)
+                ->update(['status' => PaymentStatus::Failed]);
+        }
+
         return view('payment-gateway::failed', [
             'payload' => $request->all(),
             'errorMessage' => $request->query('message', 'The transaction could not be completed by the payment provider.'),
@@ -106,7 +141,6 @@ class PaymentController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => $result->errorMessage,
-                'code' => $result->errorCode,
                 'transaction_id' => $result->transactionId,
             ], 422);
         }
@@ -114,44 +148,34 @@ class PaymentController extends Controller
         return response()->json([
             'success' => true,
             'transaction_id' => $result->transactionId,
-            'amount' => $result->amount,
-            'refund_id' => $result->refundId,
+            'refunded_amount' => $result->amount,
         ]);
     }
 
     public function gateways(GatewayResolver $resolver): JsonResponse
     {
-        $enabled = $resolver->getEnabledGateways();
+        $driverCodes = $resolver->getEnabledGateways();
 
-        $gateways = collect(config('payment-gateway.gateways', []))
-            ->map(function (array $config, string $code) use ($resolver, $enabled): array {
-                $gatewayConfig = $resolver->getGatewayConfig($code);
+        $drivers = collect($driverCodes)->map(function (string $code) use ($resolver): ?array {
+            $config = $resolver->getGatewayConfig($code);
 
-                if ($gatewayConfig === null) {
-                    return [
-                        'code' => $code,
-                        'label' => $config['label'] ?? $code,
-                        'enabled' => in_array($code, $enabled, true),
-                        'currencies' => $config['currencies'] ?? [],
-                    ];
-                }
+            if ($config === null) {
+                return null;
+            }
 
-                return [
-                    'code' => $gatewayConfig->getCode(),
-                    'label' => $gatewayConfig->getLabel(),
-                    'icon' => $gatewayConfig->getIcon(),
-                    'enabled' => in_array($code, $enabled, true),
-                    'currencies' => $gatewayConfig->getSupportedCurrencies(),
-                    'capabilities' => $gatewayConfig->getCapabilities(),
-                    'checkout_redirect' => $gatewayConfig->checkoutRedirect(),
-                ];
-            })
-            ->values()
-            ->all();
+            return [
+                'code' => $config->getCode(),
+                'label' => $config->getLabel(),
+                'icon' => $config->getIcon(),
+                'currencies' => $config->getSupportedCurrencies(),
+                'checkout_redirect' => $config->checkoutRedirect(),
+            ];
+        })->filter()->values()->all();
 
         return response()->json([
-            'enabled' => $enabled,
-            'gateways' => $gateways,
+            'success' => true,
+            'gateways' => $drivers,
+            'count' => count($drivers),
         ]);
     }
 }

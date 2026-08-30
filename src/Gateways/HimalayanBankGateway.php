@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Kreetancraft\PaymentGateway\Gateways;
 
+use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Str;
 use Kreetancraft\PaymentGateway\Data\PaymentResult;
 use Kreetancraft\PaymentGateway\Data\RefundResult;
@@ -28,6 +29,11 @@ class HimalayanBankGateway extends AbstractGateway
         $currency = $this->resolveCurrency($data['currency'] ?? 'NPR');
 
         try {
+            $confirmationUrl = $this->resolveRedirectUrl('success', ['order' => $orderNo, 'reference' => $orderNo], $data['return_url'] ?? null);
+            $failedUrl = $this->resolveRedirectUrl('failed', ['order' => $orderNo, 'reference' => $orderNo]);
+            $cancelUrl = $this->resolveRedirectUrl('cancel', ['order' => $orderNo, 'reference' => $orderNo]);
+            $backendUrl = $this->resolveWebhookUrl();
+
             $response = $this->client->prePaymentUi([
                 'apiRequest' => [
                     'requestMessageID' => (string) Str::uuid(),
@@ -50,10 +56,10 @@ class HimalayanBankGateway extends AbstractGateway
                     'amount' => round($data['amount_cents'] / 100, 2),
                 ],
                 'notificationURLs' => [
-                    'confirmationURL' => route('payment.success', ['order' => $orderNo]),
-                    'failedURL' => route('payment.cancel', ['order' => $orderNo]),
-                    'cancellationURL' => route('payment.cancel', ['order' => $orderNo]),
-                    'backendURL' => route('payment.webhook', ['gateway' => 'himalayan']),
+                    'confirmationURL' => $confirmationUrl,
+                    'failedURL' => $failedUrl,
+                    'cancellationURL' => $cancelUrl,
+                    'backendURL' => $backendUrl,
                 ],
                 'deviceDetails' => [
                     'browserIp' => request()->ip() ?? '0.0.0.0',
@@ -100,27 +106,71 @@ class HimalayanBankGateway extends AbstractGateway
 
     public function verify(array $data): VerificationResult
     {
-        $orderNo = (string) ($data['order_no'] ?? $data['transaction_id'] ?? '');
+        $orderNo = (string) (
+            $data['order_no']
+            ?? $data['orderNo']
+            ?? $data['order']
+            ?? $data['reference']
+            ?? $data['transaction_id']
+            ?? ''
+        );
+
+        if ($orderNo === '') {
+            return VerificationResult::failure('', 'Missing order number for verification.');
+        }
 
         try {
             $res = $this->client->transactionList(['orderNo' => [$orderNo]]);
-            $status = (string) data_get($res, 'response.Data.0.transactionStatus', 'PENDING');
-            $amount = (float) data_get($res, 'response.Data.0.amount', 0);
+            $tx = data_get($res, 'response.Data.0');
 
-            return VerificationResult::success(
+            if (! $tx) {
+                return VerificationResult::failure($orderNo, 'No transaction records found for this order on gateway.');
+            }
+
+            $rawStatus = strtoupper((string) data_get($tx, 'transactionStatus', 'PENDING'));
+            $amount = (float) data_get($tx, 'amount', 0);
+            $currency = $this->resolveCurrency($data['currency'] ?? (string) data_get($tx, 'currencyCode'));
+            $paidAt = (string) data_get($tx, 'transactionDateTime', now()->toIso8601String());
+
+            // Check if status represents a successful charge
+            $isSuccessful = in_array($rawStatus, ['0000', 'COMPLETED', 'SETTLED', 'SUCCESS', 'APPROVED', 'PAID'], true);
+
+            if ($isSuccessful) {
+                return VerificationResult::success(
+                    transactionId: $orderNo,
+                    status: 'completed',
+                    amount: $amount,
+                    currency: $currency,
+                    paidAt: $paidAt,
+                    reference: $orderNo,
+                );
+            }
+
+            $isCancelled = in_array($rawStatus, ['CANCELLED', 'CANCELED', 'USER_CANCELLED'], true);
+            $statusNormalized = $isCancelled ? 'cancelled' : 'failed';
+
+            return new VerificationResult(
+                success: false,
                 transactionId: $orderNo,
-                status: strtolower($status),
+                status: $statusNormalized,
                 amount: $amount,
-                currency: $this->resolveCurrency($data['currency'] ?? null)
+                currency: $currency,
+                errorMessage: "Transaction {$statusNormalized} (Gateway Status: {$rawStatus})",
+                reference: $orderNo,
             );
         } catch (Throwable $e) {
-            return VerificationResult::failure($orderNo, $e->getMessage());
+            return VerificationResult::failure($orderNo, $e->getMessage(), reference: $orderNo);
         }
     }
 
     public function webhook(array $payload): WebhookResult
     {
-        $orderNo = (string) (data_get($payload, 'orderNo') ?? data_get($payload, 'order_no') ?? '');
+        $orderNo = (string) (
+            data_get($payload, 'orderNo')
+            ?? data_get($payload, 'order_no')
+            ?? data_get($payload, 'order')
+            ?? ''
+        );
 
         if ($orderNo === '') {
             return WebhookResult::failure('payment.failed', '', 'Missing orderNo in webhook payload.');
@@ -175,5 +225,50 @@ class HimalayanBankGateway extends AbstractGateway
         $ms = (int) round(microtime(true) * 1000);
 
         return Str::upper($seed.'-'.base_convert((string) $ms, 10, 36));
+    }
+
+    /**
+     * @param array<string, mixed> $params
+     */
+    private function resolveRedirectUrl(string $type, array $params = [], ?string $overrideUrl = null): string
+    {
+        if (filled($overrideUrl)) {
+            $separator = str_contains($overrideUrl, '?') ? '&' : '?';
+
+            return $overrideUrl.$separator.http_build_query($params);
+        }
+
+        $configUrl = config("payment-gateway.routes.redirect_urls.{$type}");
+        if (filled($configUrl)) {
+            if (filter_var($configUrl, FILTER_VALIDATE_URL)) {
+                $separator = str_contains((string) $configUrl, '?') ? '&' : '?';
+
+                return $configUrl.$separator.http_build_query($params);
+            }
+            if (Route::has((string) $configUrl)) {
+                return route((string) $configUrl, $params);
+            }
+        }
+
+        $routeName = config("payment-gateway.routes.names.{$type}", "payment.{$type}");
+        if (Route::has($routeName)) {
+            return route($routeName, $params);
+        }
+
+        return url("/payment/{$type}?".http_build_query($params));
+    }
+
+    private function resolveWebhookUrl(): string
+    {
+        $configUrl = config('payment-gateway.routes.redirect_urls.webhook');
+        if (filled($configUrl) && filter_var($configUrl, FILTER_VALIDATE_URL)) {
+            return (string) $configUrl;
+        }
+
+        if (Route::has('payment.webhook')) {
+            return route('payment.webhook', ['gateway' => 'himalayan']);
+        }
+
+        return url('/payment/webhook/himalayan');
     }
 }

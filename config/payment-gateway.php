@@ -156,16 +156,19 @@ return [
     |--------------------------------------------------------------------------
     */
     'routes' => [
-        'register' => true,
-        'prefix' => 'payment',
+        'register' => env('PAYMENT_GATEWAY_REGISTER_ROUTES', true),
+        'register_ui' => env('PAYMENT_GATEWAY_REGISTER_UI', true), // Set false for headless API setups
+        'register_admin' => env('PAYMENT_GATEWAY_REGISTER_ADMIN', true),
+        'register_api' => env('PAYMENT_GATEWAY_REGISTER_API', true),
+        'prefix' => env('PAYMENT_GATEWAY_ROUTE_PREFIX', 'payment'),
         'middleware' => ['web'],
-        'register_api' => true,
-        'api_prefix' => 'api/v1/payment',
+        'api_prefix' => env('PAYMENT_GATEWAY_API_PREFIX', 'api/v1/payment'),
         'api_middleware' => ['api'],
         'names' => [
             'checkout' => 'payment.checkout',
             'success' => 'payment.success',
             'cancel' => 'payment.cancel',
+            'failed' => 'payment.failed',
             'gateways' => 'admin.payment.gateways',
             'gateways_edit' => 'admin.payment.gateways.edit',
             'coupons' => 'admin.payment.coupons',
@@ -173,6 +176,12 @@ return [
             'coupons_edit' => 'admin.payment.coupons.edit',
             'coupons_show' => 'admin.payment.coupons.show',
             'transactions' => 'admin.payment.transactions',
+        ],
+        'redirect_urls' => [
+            'success' => env('PAYMENT_GATEWAY_SUCCESS_URL', null), // Custom success redirect URL or route
+            'cancel' => env('PAYMENT_GATEWAY_CANCEL_URL', null),   // Custom cancel redirect URL or route
+            'failed' => env('PAYMENT_GATEWAY_FAILED_URL', null),   // Custom failed redirect URL or route
+            'webhook' => env('PAYMENT_GATEWAY_WEBHOOK_URL', null), // Custom webhook URL
         ],
     ],
 

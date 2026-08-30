@@ -16,10 +16,17 @@ class VerificationResult extends Data
         public string $currency,
         public ?string $paidAt = null,
         public ?string $errorMessage = null,
+        public ?string $reference = null,
     ) {}
 
-    public static function success(string $transactionId, string $status, float $amount, string $currency, ?string $paidAt = null): self
-    {
+    public static function success(
+        string $transactionId,
+        string $status,
+        float $amount,
+        string $currency,
+        ?string $paidAt = null,
+        ?string $reference = null,
+    ): self {
         return new self(
             success: true,
             transactionId: $transactionId,
@@ -27,10 +34,11 @@ class VerificationResult extends Data
             amount: $amount,
             currency: $currency,
             paidAt: $paidAt,
+            reference: $reference ?? $transactionId,
         );
     }
 
-    public static function failure(string $transactionId, string $errorMessage): self
+    public static function failure(string $transactionId, string $errorMessage, ?string $reference = null): self
     {
         return new self(
             success: false,
@@ -39,6 +47,7 @@ class VerificationResult extends Data
             amount: 0,
             currency: '',
             errorMessage: $errorMessage,
+            reference: $reference ?? $transactionId,
         );
     }
 }
