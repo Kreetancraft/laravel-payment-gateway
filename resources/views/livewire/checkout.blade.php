@@ -62,7 +62,7 @@
                     wire:click="goToStep(3)"
                     class="flex items-center gap-2 p-2 rounded-lg border text-start transition {{ $step === 3 ? 'border-zinc-900 bg-zinc-50 dark:border-zinc-100 dark:bg-zinc-800' : 'border-zinc-200 dark:border-zinc-800 opacity-60' }}"
                 >
-                    <div class="flex size-6 shrink-0 items-center justify-center rounded-full text-xs font-bold {{ $step === 3 ? 'bg-zinc-900 text-white dark:bg-white dark:text-zinc-900' : 'bg-zinc-200 dark:bg-zinc-700 text-zinc-600') }}">
+                    <div class="flex size-6 shrink-0 items-center justify-center rounded-full text-xs font-bold {{ $step === 3 ? 'bg-zinc-900 text-white dark:bg-white dark:text-zinc-900' : 'bg-zinc-200 dark:bg-zinc-700 text-zinc-600' }}">
                         3
                     </div>
                     <div class="min-w-0 hidden sm:block">

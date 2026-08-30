@@ -228,7 +228,7 @@ class HimalayanBankGateway extends AbstractGateway
     }
 
     /**
-     * @param array<string, mixed> $params
+     * @param  array<string, mixed>  $params
      */
     private function resolveRedirectUrl(string $type, array $params = [], ?string $overrideUrl = null): string
     {
