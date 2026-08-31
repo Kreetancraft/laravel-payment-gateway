@@ -6,6 +6,7 @@ namespace Kreetancraft\PaymentGateway\Http\Middleware;
 
 use Closure;
 use Illuminate\Http\Request;
+use Kreetancraft\PaymentGateway\Contracts\GatewayResolver;
 use Stripe\Webhook;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -33,7 +34,7 @@ class VerifyWebhookSignature
             $signature = $request->header('stripe-signature') ?? $request->header('Stripe-Signature');
 
             if (blank($signature)) {
-                $webhookSecret = (string) config('payment-gateway.gateways.stripe.webhook_secret', config('payment-gateway.webhook.secret', ''));
+                $webhookSecret = $this->resolveStripeSecret();
 
                 if (blank($webhookSecret)) {
                     return $next($request);
@@ -45,7 +46,7 @@ class VerifyWebhookSignature
                 ], 400);
             }
 
-            $secret = (string) config('payment-gateway.gateways.stripe.webhook_secret', config('payment-gateway.webhook.secret', ''));
+            $secret = $this->resolveStripeSecret();
 
             if (blank($secret)) {
                 return $next($request);
@@ -54,7 +55,8 @@ class VerifyWebhookSignature
             $payload = $request->getContent();
 
             if (blank($payload)) {
-                $payload = json_encode($request->all(), JSON_THROW_ON_ERROR);
+                // Do not re-encode parsed JSON — signature would mismatch; use exactly what Stripe sent
+                $payload = $request->getContent();
             }
 
             try {
@@ -88,10 +90,6 @@ class VerifyWebhookSignature
 
         $payload = $request->getContent();
 
-        if (blank($payload)) {
-            $payload = json_encode($request->all(), JSON_THROW_ON_ERROR);
-        }
-
         $expected = hash_hmac('sha256', $payload, $secret);
 
         if (! hash_equals($expected, (string) $provided)) {
@@ -102,5 +100,21 @@ class VerifyWebhookSignature
         }
 
         return $next($request);
+    }
+
+    private function resolveStripeSecret(): string
+    {
+        // Prefer DB-encrypted secret so UI and middleware stay in sync
+        try {
+            if (app()->bound(GatewayResolver::class)) {
+                $gateway = app(GatewayResolver::class)->getGatewayModel('stripe');
+                if ($gateway && filled($gateway->getStripeWebhookSecret())) {
+                    return (string) $gateway->getStripeWebhookSecret();
+                }
+            }
+        } catch (\Throwable) {
+        }
+
+        return (string) config('payment-gateway.gateways.stripe.webhook_secret', config('payment-gateway.webhook.secret', ''));
     }
 }

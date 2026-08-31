@@ -32,7 +32,7 @@ class Checkout extends Component
     #[Url]
     public ?string $coupon = null;
 
-    public ?string $orderTitle = '';
+    public string $orderTitle = 'Order Payment';
 
     public ?string $description = '';
 
@@ -84,6 +84,9 @@ class Checkout extends Component
         ?string $returnUrl = null,
         array $metadata = [],
     ): void {
+        // Guard against Livewire passing null to typed string property
+        $orderTitle = $orderTitle ?? '';
+
         $this->loadInitialValues(
             gateway: $gateway,
             amount: $amount,

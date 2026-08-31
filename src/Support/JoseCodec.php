@@ -153,11 +153,40 @@ class JoseCodec
     }
 
     /**
-     * Load a PEM-wrapped or raw-base64 RSA private key.
+     * Load a PEM-wrapped or raw-base64 RSA private key. Tries both PKCS#8 (PRIVATE KEY)
+     * and PKCS#1 (RSA PRIVATE KEY) to match demo (RSA PRIVATE KEY) and modern exports.
      */
     public function loadPrivateKey(string $key): JWK
     {
-        return JWKFactory::createFromKey($this->pem($key, 'RSA PRIVATE KEY'));
+        $key = trim($key);
+        if ($key === '') {
+            throw new RuntimeException('HBL JOSE key material is empty (private).');
+        }
+
+        $candidates = [];
+        if (str_starts_with($key, '-----BEGIN')) {
+            $candidates[] = $key;
+            // Also try alternate header if PKCS#1 vs PKCS#8 mismatch
+            if (str_contains($key, 'RSA PRIVATE KEY')) {
+                $candidates[] = str_replace('RSA PRIVATE KEY', 'PRIVATE KEY', $key);
+            } elseif (str_contains($key, 'PRIVATE KEY')) {
+                $candidates[] = str_replace('PRIVATE KEY', 'RSA PRIVATE KEY', $key);
+            }
+        } else {
+            $candidates[] = "-----BEGIN PRIVATE KEY-----\n{$key}\n-----END PRIVATE KEY-----";
+            $candidates[] = "-----BEGIN RSA PRIVATE KEY-----\n{$key}\n-----END RSA PRIVATE KEY-----";
+        }
+
+        $last = null;
+        foreach ($candidates as $pem) {
+            try {
+                return JWKFactory::createFromKey($pem);
+            } catch (\Throwable $e) {
+                $last = $e;
+            }
+        }
+
+        throw new RuntimeException('Failed to load private key: '.($last?->getMessage() ?? 'unknown'), 0, $last);
     }
 
     /**
@@ -165,21 +194,15 @@ class JoseCodec
      */
     public function loadPublicKey(string $key): JWK
     {
-        return JWKFactory::createFromKey($this->pem($key, 'PUBLIC KEY'));
-    }
-
-    private function pem(string $key, string $label): string
-    {
         $key = trim($key);
+        if ($key === '') {
+            throw new RuntimeException('HBL JOSE key material is empty (public).');
+        }
 
         if (str_starts_with($key, '-----BEGIN')) {
-            return $key;
+            return JWKFactory::createFromKey($key);
         }
 
-        if ($key === '') {
-            throw new RuntimeException("HBL JOSE key material is empty ({$label}).");
-        }
-
-        return "-----BEGIN {$label}-----\n{$key}\n-----END {$label}-----";
+        return JWKFactory::createFromKey("-----BEGIN PUBLIC KEY-----\n{$key}\n-----END PUBLIC KEY-----");
     }
 }

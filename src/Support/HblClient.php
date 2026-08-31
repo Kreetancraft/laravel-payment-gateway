@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Kreetancraft\PaymentGateway\Support;
 
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Jose\Component\Core\JWK;
 use Kreetancraft\PaymentGateway\Contracts\GatewayResolver;
@@ -146,14 +147,26 @@ class HblClient
 
         $baseUrl = $this->getBaseUrl();
 
+        if (app()->environment('local', 'development')) {
+            Log::debug('HBL JOSE request', [
+                'path' => $path,
+                'baseUrl' => $baseUrl,
+                'officeId' => substr($officeId, 0, 4).str_repeat('*', max(0, strlen($officeId) - 4)),
+                'apiKey' => substr($apiKey, 0, 6).'***',
+                'orderNo' => $request['orderNo'] ?? ($request['advSearchParams']['orderNo'] ?? null),
+                'amountText' => $request['transactionAmount']['amountText'] ?? null,
+                'currency' => $request['transactionAmount']['currencyCode'] ?? null,
+            ]);
+        }
+
         $httpResponse = Http::withBody($body, 'application/jose; charset=utf-8')
             ->withHeaders([
                 'Accept' => 'application/jose',
                 'CompanyApiKey' => $apiKey,
             ])
             ->baseUrl("{$baseUrl}/")
-            ->timeout(30)
-            ->connectTimeout(10)
+            ->timeout(60)
+            ->connectTimeout(15)
             ->post($path);
 
         $responseBody = (string) $httpResponse->body();
@@ -174,14 +187,17 @@ class HblClient
                 return $decrypted;
             } catch (Throwable $e) {
                 if ($httpResponse->failed()) {
-                    throw new RuntimeException("HBL API Error ({$httpResponse->status()}): {$e->getMessage()}");
+                    // Avoid double-wrapping "HBL API Error: HBL API Error"
+                    $msg = str_starts_with($e->getMessage(), 'HBL API Error') ? $e->getMessage() : "HBL API Error ({$httpResponse->status()}): {$e->getMessage()}";
+                    throw new RuntimeException($msg, 0, $e);
                 }
                 throw $e;
             }
         }
 
         if ($httpResponse->failed()) {
-            throw new RuntimeException("HBL API Error ({$httpResponse->status()}): {$responseBody}");
+            Log::error('HBL non-JOSE error', ['path' => $path, 'status' => $httpResponse->status(), 'body' => substr($responseBody, 0, 4000)]);
+            throw new RuntimeException("HBL API Error ({$httpResponse->status()}): ".substr($responseBody, 0, 500));
         }
 
         return (array) json_decode($responseBody, true);

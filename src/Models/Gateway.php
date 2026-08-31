@@ -163,6 +163,23 @@ class Gateway extends Model
         $this->setCredential('environment', $value);
     }
 
+    public function getHimalayanRequest3ds(): bool
+    {
+        $val = $this->getCredential('request_3ds', true);
+
+        return filter_var($val, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE) ?? true;
+    }
+
+    public function setHimalayanRequest3ds(bool $value): void
+    {
+        $this->setCredential('request_3ds', $value);
+    }
+
+    public function isHimalayanTestMode(): bool
+    {
+        return strtolower($this->getHimalayanEnvironment()) !== 'production' && strtolower($this->getHimalayanEnvironment()) !== 'live';
+    }
+
     public function getMerchantSigningKey(): ?string
     {
         return $this->getCredential('merchant_signing_key') ?? $this->getCredential('merchant_signing_key_path');

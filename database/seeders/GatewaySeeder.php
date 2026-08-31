@@ -132,6 +132,14 @@ class GatewaySeeder extends Seeder
                         'required' => true,
                     ],
                     [
+                        'key' => 'request_3ds',
+                        'label' => 'Enable 3D Secure',
+                        'type' => 'checkbox',
+                        'default' => true,
+                        'required' => false,
+                        'description' => 'Request 3DS flag Y/N — turn off for test mode (matches WP Enable/Disable 3D Secure)',
+                    ],
+                    [
                         'key' => 'currencies',
                         'label' => 'Supported Currencies',
                         'type' => 'multiselect',
@@ -152,6 +160,7 @@ class GatewaySeeder extends Seeder
                     'paco_encryption_public_key' => null,
                     'paco_signing_public_key' => null,
                     'environment' => 'demo',
+                    'request_3ds' => true,
                     'currencies' => ['NPR', 'USD'],
                 ],
             ]

@@ -28,12 +28,17 @@ class HimalayanBankGateway extends AbstractGateway
     {
         $orderNo = $this->generateOrderNo($data['reference_seed'] ?? Str::random(8));
         $currency = $this->resolveCurrency($data['currency'] ?? 'NPR');
+        // Respect gateway's 3DS toggle (WP parity: Enable/Disable 3D Secure), allow per-request override
+        $request3ds = $data['request_3ds'] ?? $this->gateway->getHimalayanRequest3ds();
 
         try {
-            $confirmationUrl = $this->resolveRedirectUrl('success', ['order' => $orderNo, 'reference' => $orderNo], $data['return_url'] ?? null);
-            $failedUrl = $this->resolveRedirectUrl('failed', ['order' => $orderNo, 'reference' => $orderNo]);
-            $cancelUrl = $this->resolveRedirectUrl('cancel', ['order' => $orderNo, 'reference' => $orderNo]);
+            $confirmationUrl = $this->resolveRedirectUrl('success', ['order' => $orderNo, 'reference' => $orderNo, 'orderNo' => $orderNo], $data['return_url'] ?? null);
+            $failedUrl = $this->resolveRedirectUrl('failed', ['order' => $orderNo, 'reference' => $orderNo, 'orderNo' => $orderNo]);
+            $cancelUrl = $this->resolveRedirectUrl('cancel', ['order' => $orderNo, 'reference' => $orderNo, 'orderNo' => $orderNo]);
             $backendUrl = $this->resolveWebhookUrl();
+
+            $purchaseItems = $data['purchase_items'] ?? $data['purchaseItems'] ?? $this->buildDefaultPurchaseItems($orderNo, $currency);
+            $customFields = $data['custom_fields'] ?? $data['customFieldList'] ?? [['fieldName' => 'TestField', 'fieldValue' => 'This is test']];
 
             $response = $this->client->prePaymentUi([
                 'apiRequest' => [
@@ -49,7 +54,7 @@ class HimalayanBankGateway extends AbstractGateway
                 'storeCardDetails' => ['storeCardFlag' => 'N', 'storedCardUniqueID' => null],
                 'installmentPaymentDetails' => ['ippFlag' => 'N', 'installmentPeriod' => 0, 'interestType' => null],
                 'mcpFlag' => 'N',
-                'request3dsFlag' => ($data['request_3ds'] ?? true) ? 'Y' : 'N',
+                'request3dsFlag' => $request3ds ? 'Y' : 'N',
                 'transactionAmount' => [
                     'amountText' => str_pad((string) $data['amount_cents'], 12, '0', STR_PAD_LEFT),
                     'currencyCode' => $currency,
@@ -68,6 +73,8 @@ class HimalayanBankGateway extends AbstractGateway
                     'browserUserAgent' => (string) request()->userAgent(),
                     'mobileDeviceFlag' => 'N',
                 ],
+                'purchaseItems' => $purchaseItems,
+                'customFieldList' => $customFields,
             ]);
 
             $url = data_get($response, 'response.Data.paymentPage.paymentPageURL');
@@ -227,10 +234,37 @@ class HimalayanBankGateway extends AbstractGateway
 
     private function generateOrderNo(string $seed): string
     {
-        $ms = (int) round(microtime(true) * 1000);
-        $suffix = base_convert((string) $ms, 10, 36);
+        // Numeric ms timestamp like demo getPreciseTimestamp(3) for 2C2P compatibility
+        // Keep seed prefix only if explicitly numeric-friendly; otherwise use pure timestamp
+        if (filled($seed) && preg_match('/^[A-Z0-9\-_]+$/i', $seed) && strlen($seed) <= 8) {
+            $ms = (int) round(microtime(true) * 1000);
 
-        return Str::upper("{$seed}-{$suffix}");
+            return (string) $ms;
+        }
+
+        return (string) (int) round(microtime(true) * 1000);
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    private function buildDefaultPurchaseItems(string $orderNo, string $currency): array
+    {
+        return [
+            [
+                'purchaseItemType' => 'ticket',
+                'referenceNo' => '2322460376026',
+                'purchaseItemDescription' => "Bundled insurance for {$orderNo}",
+                'purchaseItemPrice' => [
+                    'amountText' => '000000000100',
+                    'currencyCode' => 'NPR',
+                    'decimalPlaces' => 2,
+                    'amount' => 1,
+                ],
+                'subMerchantID' => 'string',
+                'passengerSeqNo' => 1,
+            ],
+        ];
     }
 
     private function resolveRedirectUrl(string $type, array $params = [], ?string $overrideUrl = null): string

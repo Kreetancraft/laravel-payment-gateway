@@ -10,22 +10,30 @@ use Kreetancraft\PaymentGateway\Data\PaymentResult;
 use Kreetancraft\PaymentGateway\Data\RefundResult;
 use Kreetancraft\PaymentGateway\Data\VerificationResult;
 use Kreetancraft\PaymentGateway\Data\WebhookResult;
+use Kreetancraft\PaymentGateway\Models\Gateway;
 use Stripe\Exception\ApiErrorException;
 use Stripe\Exception\SignatureVerificationException;
-use Stripe\PaymentIntent;
-use Stripe\Refund;
-use Stripe\Stripe;
+use Stripe\StripeClient;
 use Stripe\Webhook;
 use UnexpectedValueException;
 
 class StripeGateway extends AbstractGateway
 {
+    private StripeClient $client;
+
+    public function __construct(Gateway $gateway, ?StripeClient $client = null)
+    {
+        parent::__construct($gateway);
+        $this->client = $client ?? new StripeClient([
+            'api_key' => (string) $this->gateway->getStripeSecretKey(),
+            'stripe_version' => '2026-08-26.dahlia',
+        ]);
+    }
+
     public function charge(array $data): PaymentResult
     {
         try {
-            Stripe::setApiKey($this->gateway->getStripeSecretKey());
-
-            $paymentIntent = PaymentIntent::create([
+            $paymentIntent = $this->client->paymentIntents->create([
                 'amount' => $data['amount_cents'],
                 'currency' => strtolower($data['currency']),
                 'description' => $data['description'] ?? '',
@@ -65,9 +73,7 @@ class StripeGateway extends AbstractGateway
     public function refund(string $transactionId, float $amount): RefundResult
     {
         try {
-            Stripe::setApiKey($this->gateway->getStripeSecretKey());
-
-            $refund = Refund::create([
+            $refund = $this->client->refunds->create([
                 'payment_intent' => $transactionId,
                 'amount' => (int) round($amount * 100),
             ]);
@@ -90,9 +96,13 @@ class StripeGateway extends AbstractGateway
     public function verify(array $data): VerificationResult
     {
         try {
-            Stripe::setApiKey($this->gateway->getStripeSecretKey());
+            $intentId = (string) ($data['payment_intent_id'] ?? $data['transaction_id'] ?? $data['reference'] ?? $data['order'] ?? $data['orderNo'] ?? $data['order_no'] ?? '');
 
-            $paymentIntent = PaymentIntent::retrieve($data['payment_intent_id'] ?? $data['transaction_id'] ?? '');
+            if ($intentId === '') {
+                return VerificationResult::failure('', 'Missing payment_intent_id for verification.');
+            }
+
+            $paymentIntent = $this->client->paymentIntents->retrieve($intentId);
 
             return VerificationResult::success(
                 transactionId: $paymentIntent->id,
@@ -103,7 +113,7 @@ class StripeGateway extends AbstractGateway
             );
         } catch (ApiErrorException $e) {
             return VerificationResult::failure(
-                transactionId: $data['transaction_id'] ?? '',
+                transactionId: $intentId ?? ($data['transaction_id'] ?? ''),
                 errorMessage: $e->getMessage()
             );
         }

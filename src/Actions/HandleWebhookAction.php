@@ -110,7 +110,7 @@ class HandleWebhookAction
             }
 
             if (blank($signature)) {
-                $webhookSecret = (string) config('payment-gateway.gateways.stripe.webhook_secret', config('payment-gateway.webhook.secret', ''));
+                $webhookSecret = $this->resolveStripeSecret();
 
                 if (blank($webhookSecret)) {
                     Log::warning("Webhook signature verification skipped for gateway [{$gateway}]: webhook secret is not configured.");
@@ -121,7 +121,7 @@ class HandleWebhookAction
                 return false;
             }
 
-            $secret = (string) config('payment-gateway.gateways.stripe.webhook_secret', config('payment-gateway.webhook.secret', ''));
+            $secret = $this->resolveStripeSecret();
 
             if (blank($secret)) {
                 Log::warning("Stripe webhook secret is not configured for gateway [{$gateway}].");
@@ -130,7 +130,8 @@ class HandleWebhookAction
             }
 
             try {
-                $rawPayload = json_encode($payload, JSON_THROW_ON_ERROR);
+                // Use raw JSON from request when available to preserve Stripe signature; fall back to payload
+                $rawPayload = $payload['_raw'] ?? json_encode($payload, JSON_THROW_ON_ERROR);
                 Webhook::constructEvent($rawPayload, (string) $signature, $secret);
 
                 return true;
@@ -157,9 +158,24 @@ class HandleWebhookAction
             return false;
         }
 
-        $expected = hash_hmac('sha256', json_encode($payload, JSON_THROW_ON_ERROR), $secret);
+        $expected = hash_hmac('sha256', $payload['_raw'] ?? json_encode($payload, JSON_THROW_ON_ERROR), $secret);
 
         return hash_equals($expected, (string) $provided);
+    }
+
+    private function resolveStripeSecret(): string
+    {
+        try {
+            if (app()->bound(GatewayResolver::class)) {
+                $gateway = app(GatewayResolver::class)->getGatewayModel('stripe');
+                if ($gateway && filled($gateway->getStripeWebhookSecret())) {
+                    return (string) $gateway->getStripeWebhookSecret();
+                }
+            }
+        } catch (Throwable) {
+        }
+
+        return (string) config('payment-gateway.gateways.stripe.webhook_secret', config('payment-gateway.webhook.secret', ''));
     }
 
     protected function updatePaymentStatus(WebhookResult $result): void
