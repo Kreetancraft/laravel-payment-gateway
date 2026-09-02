@@ -39,7 +39,10 @@ return [
             'icon' => 'https://cdn.brandfetch.io/idxAg10C0L/theme/dark/logo.svg?c=1dxbfHSJFAPEGdCLU4o5B',
             'currencies' => ['USD', 'EUR', 'GBP', 'INR', 'NPR', 'AUD', 'CAD'],
             'supports_subscriptions' => false,
-            'checkout_redirect' => false,
+            // Stripe hosts the payment page: the buyer leaves for
+            // checkout.stripe.com and returns to success_url. No card field is
+            // rendered by this package.
+            'checkout_redirect' => true,
             'capabilities' => ['charge', 'refund', 'webhook', 'verify'],
             'config_fields' => [
                 'secret_key' => [

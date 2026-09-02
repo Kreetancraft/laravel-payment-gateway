@@ -20,9 +20,12 @@ class DatabaseSeeder extends Seeder
 {
     public function run(): void
     {
+        // USD, and small. The HBL account takes roughly USD 1-10, and Stripe
+        // test mode is happy with anything — so one small USD invoice exercises
+        // both gateways without a currency switch in between.
         DemoInvoice::firstOrCreate(
             ['number' => 'DEMO-001'],
-            ['currency' => 'NPR', 'total_cents' => 150000, 'paid_cents' => 0],
+            ['currency' => 'USD', 'total_cents' => 500, 'paid_cents' => 0],
         );
 
         Gateway::firstOrCreate(['code' => 'himalayan'], [
@@ -30,7 +33,7 @@ class DatabaseSeeder extends Seeder
             'class' => HimalayanBankGateway::class,
             'enabled' => false,
             'environment' => 'demo',
-            'currencies' => ['NPR', 'USD'],
+            'currencies' => ['USD'],
             'checkout_redirect' => true,
         ]);
 
@@ -39,7 +42,8 @@ class DatabaseSeeder extends Seeder
             'class' => StripeGateway::class,
             'enabled' => false,
             'environment' => 'demo',
-            'currencies' => ['USD', 'EUR', 'GBP'],
+            'currencies' => ['USD'],
+            'checkout_redirect' => true,
         ]);
     }
 }

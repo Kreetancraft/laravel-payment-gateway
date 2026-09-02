@@ -8,22 +8,33 @@
 
     <ol class="mt-6 max-w-2xl list-decimal space-y-2 pl-5 text-sm">
         <li>
-            Open <a href="/payment/gateways" class="underline">Gateways</a>, edit
-            <strong>Himalayan Bank</strong>, paste the sandbox office id, API key, encryption key id
-            and the four RSA keys, and enable it.
+            Open <a href="/payment/gateways" class="underline">Gateways</a> and configure the one you
+            want to test. Both are hosted-redirect gateways: the buyer leaves for the provider's own
+            page and comes back. No card field is rendered here.
         </li>
         <li>
-            The vendor's published sandbox values live in the demo app at
+            <strong>Stripe</strong> needs a secret key, a publishable key and a webhook signing
+            secret. For the signing secret, run
+            <code class="rounded bg-zinc-200 px-1 dark:bg-zinc-800">stripe listen --forward-to http://localhost:8899/api/v1/payment/webhook/stripe</code>
+            and paste the <code class="rounded bg-zinc-200 px-1 dark:bg-zinc-800">whsec_…</code> it prints.
+            Leave it running: without it nothing tells this app the payment succeeded.
+        </li>
+        <li>
+            <strong>Himalayan Bank</strong> needs the office id, API key, encryption key id and the
+            RSA keys. The vendor's published sandbox values live in the demo app at
             <code class="rounded bg-zinc-200 px-1 dark:bg-zinc-800">himalayan-bank-payment-gateway/app/Services/HBL/SecurityData.php</code>.
         </li>
         <li>Run <code class="rounded bg-zinc-200 px-1 dark:bg-zinc-800">php artisan payment-gateway:status</code> — it should exit clean.</li>
-        <li>Pay the invoice below. You will be redirected to PACO's hosted page.</li>
-        <li>Come back and check <a href="/payment/transactions" class="underline">Transactions</a>.</li>
+        <li>Pay the invoice below, then come back and check <a href="/payment/transactions" class="underline">Transactions</a>.</li>
     </ol>
 
     <p class="mt-4 max-w-2xl rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
-        The sandbox only approves <strong>NPR</strong> test cards. A USD authorisation comes back
-        “05 Do Not Honor”, which is the sandbox refusing, not a bug here.
+        The payment is not settled by coming back. Both gateways leave it
+        <strong>pending</strong> until the webhook confirms it — that is deliberate, because a buyer
+        can pay and then lose their connection before the redirect lands. Stripe's test card is
+        <code class="rounded bg-amber-200/60 px-1 dark:bg-amber-900/60">4242 4242 4242 4242</code>,
+        any future expiry and any CVC. The HBL sandbox approves only small amounts on this account,
+        which is why the invoice is USD 5.
     </p>
 
     @if ($invoice)

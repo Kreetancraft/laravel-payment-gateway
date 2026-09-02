@@ -107,8 +107,12 @@ class EditCoupon extends Component
             'usage_limit' => $this->usageLimit,
             'usage_limit_per_user' => $this->usageLimitPerUser,
             'user_ids' => $userIds,
-            'starts_at' => $this->startsAt,
-            'expires_at' => $this->expiresAt,
+            // Blank means "no schedule", not "now". Livewire binds an empty
+            // date input as '', and the datetime cast reads '' as the current
+            // time — so a coupon saved with the optional schedule left alone
+            // came out already expired and could never be redeemed.
+            'starts_at' => filled($this->startsAt) ? $this->startsAt : null,
+            'expires_at' => filled($this->expiresAt) ? $this->expiresAt : null,
             'is_active' => $this->isActive,
             'is_stackable' => $this->isStackable,
             'is_free_shipping' => $this->isFreeShipping || $this->type === 'free_shipping',
