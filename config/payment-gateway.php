@@ -191,6 +191,23 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | When an unfinished attempt is treated as abandoned
+    |--------------------------------------------------------------------------
+    |
+    | A payment left pending blocks another attempt on the same thing, which is
+    | what stops a buyer being charged twice. But a buyer who closes the tab
+    | leaves one behind, and without a limit it blocks them forever.
+    |
+    | After this many minutes — and only once the gateway has confirmed it was
+    | never paid — the attempt is cancelled and a fresh one is allowed. Keep it
+    | comfortably longer than the hosted session lives.
+    |
+    */
+
+    'abandoned_after_minutes' => 30,
+
+    /*
+    |--------------------------------------------------------------------------
     | Layouts
     |--------------------------------------------------------------------------
     |

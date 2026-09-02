@@ -12,6 +12,7 @@ use Kreetancraft\PaymentGateway\Jobs\ReverifyPaymentJob;
 use Kreetancraft\PaymentGateway\Models\Coupon;
 use Kreetancraft\PaymentGateway\Models\Payment;
 use Lorisleiva\Actions\Concerns\AsAction;
+use Throwable;
 
 class ChargePaymentAction
 {
@@ -135,28 +136,7 @@ class ChargePaymentAction
         // same amount for the same thing with identical payloads collided and
         // the second silently received the first's payment — while adding any
         // field at all defeated it.
-        $idempotencyKey = hash('sha256', implode(':', [
-            $payable->getMorphClass(),
-            (string) $payable->getKey(),
-            $payable->paymentReference(),
-            $gatewayCode,
-            // The amount belongs in the key. A gateway rejects a reused
-            // idempotency key that arrives with different parameters, so
-            // without this a buyer who applied a coupon after a first attempt
-            // got a hard failure from Stripe rather than a cheaper checkout.
-            // It also means a deliberate change of amount is a new attempt,
-            // while a double-submit of the same one still collapses.
-            (string) $amountCents,
-            $currency,
-            // Failed attempts stay in the table and the column is unique, so a
-            // retry needs a key of its own. Counting them keys each attempt
-            // distinctly while still collapsing a double-submit of the same one.
-            (string) Payment::query()
-                ->where('payable_type', $payable->getMorphClass())
-                ->where('payable_id', $payable->getKey())
-                ->whereIn('status', [PaymentStatus::Failed, PaymentStatus::Canceled])
-                ->count(),
-        ]));
+        $idempotencyKey = $this->idempotencyKeyFor($payable, $gatewayCode, $amountCents, $currency);
 
         // Only an attempt that is still open, or already paid, stops another one.
         //
@@ -170,21 +150,16 @@ class ChargePaymentAction
             ->first();
 
         if ($existing !== null) {
-            // Hand back the hosted page this attempt already has, so the buyer
-            // resumes it. Returning no redirect URL left them on a screen saying
-            // the payment had started but not completed, with no way forward and
-            // no way to try again — the attempt they had abandoned blocked every
-            // later one until it timed out.
-            return PaymentResult::success(
-                orderReference: (string) $existing->gateway_reference,
-                redirectUrl: $existing->status === PaymentStatus::Pending
-                    ? ($existing->metadata['redirect_url'] ?? null)
-                    : null,
-                checkoutData: json_encode(['payment_id' => $existing->id, 'idempotent' => true], JSON_THROW_ON_ERROR),
-                // Already paid: the screen sends them to the success page rather
-                // than asking them to pay for it a second time.
-                settled: $existing->status === PaymentStatus::Succeeded,
-            );
+            $resolved = $this->resolveOpenAttempt($existing);
+
+            if ($resolved !== null) {
+                return $resolved;
+            }
+
+            // The old attempt turned out to be dead and has been closed. That
+            // changes the attempt count, so the key has to be recomputed before
+            // a new row is written with it.
+            $idempotencyKey = $this->idempotencyKeyFor($payable, $gatewayCode, $amountCents, $currency);
         }
 
         $paymentData = [
@@ -277,6 +252,131 @@ class ChargePaymentAction
      * implement Payable. Anything else is refused — without the allowlist a
      * caller could point checkout at any model in the application.
      */
+    /**
+     * Keyed on what is being bought, not on a hash of the whole request.
+     *
+     * The old key was `hash(json_encode($data))`, so two buyers paying the same
+     * amount for the same thing with identical payloads collided and the second
+     * silently received the first's payment — while adding any field at all
+     * defeated it.
+     */
+    private function idempotencyKeyFor(Payable $payable, string $gatewayCode, int $amountCents, string $currency): string
+    {
+        return hash('sha256', implode(':', [
+            $payable->getMorphClass(),
+            (string) $payable->getKey(),
+            $payable->paymentReference(),
+            $gatewayCode,
+            // The amount belongs in the key. A gateway rejects a reused
+            // idempotency key that arrives with different parameters, so without
+            // this a buyer who applied a coupon after a first attempt got a hard
+            // failure from Stripe rather than a cheaper checkout. It also means a
+            // deliberate change of amount is a new attempt, while a double-submit
+            // of the same one still collapses.
+            (string) $amountCents,
+            $currency,
+            // Closed attempts stay in the table and the column is unique, so a
+            // retry needs a key of its own.
+            (string) Payment::query()
+                ->where('payable_type', $payable->getMorphClass())
+                ->where('payable_id', $payable->getKey())
+                ->whereIn('status', [PaymentStatus::Failed, PaymentStatus::Canceled])
+                ->count(),
+        ]));
+    }
+
+    /**
+     * What to do about an attempt that is already open.
+     *
+     * Returns a result to hand back, or null to say the old attempt is dead and
+     * a fresh one may proceed.
+     *
+     * The order matters. Resuming the hosted page is best: the buyer carries on
+     * where they left off. Failing that we ask the gateway, because "pending" in
+     * our table only means nobody has told us otherwise — the buyer may well have
+     * paid, and starting a second attempt over the top of that is how somebody
+     * gets charged twice.
+     *
+     * Only when the gateway agrees it is not paid, and enough time has passed
+     * that the hosted session is gone, is the attempt written off. Before that
+     * fix an abandoned attempt with no stored URL blocked the payable forever:
+     * the screen said the payment had started but not completed, and there was
+     * no way forward and no way to start again.
+     */
+    private function resolveOpenAttempt(Payment $existing): ?PaymentResult
+    {
+        if ($existing->status === PaymentStatus::Succeeded) {
+            return PaymentResult::success(
+                orderReference: (string) $existing->gateway_reference,
+                redirectUrl: null,
+                checkoutData: json_encode(['payment_id' => $existing->id, 'idempotent' => true], JSON_THROW_ON_ERROR),
+                settled: true,
+            );
+        }
+
+        $resumeUrl = $existing->metadata['redirect_url'] ?? null;
+
+        if (filled($resumeUrl)) {
+            return PaymentResult::success(
+                orderReference: (string) $existing->gateway_reference,
+                redirectUrl: (string) $resumeUrl,
+                checkoutData: json_encode(['payment_id' => $existing->id, 'resumed' => true], JSON_THROW_ON_ERROR),
+            );
+        }
+
+        if (blank($existing->gateway_reference)) {
+            // Never reached the gateway, so there is nothing to double-charge.
+            $existing->update(['status' => PaymentStatus::Canceled]);
+
+            return null;
+        }
+
+        try {
+            VerifyPaymentAction::run([
+                'gateway' => $existing->gateway,
+                'order_no' => $existing->gateway_reference,
+                'transaction_id' => $existing->gateway_reference,
+            ]);
+        } catch (Throwable) {
+            // Could not ask. Not knowing is a reason to wait, not to retry.
+            return $this->stillInFlight($existing);
+        }
+
+        $fresh = $existing->fresh();
+
+        if ($fresh->status === PaymentStatus::Succeeded) {
+            return PaymentResult::success(
+                orderReference: (string) $fresh->gateway_reference,
+                redirectUrl: null,
+                checkoutData: json_encode(['payment_id' => $fresh->id, 'idempotent' => true], JSON_THROW_ON_ERROR),
+                settled: true,
+            );
+        }
+
+        if (in_array($fresh->status, [PaymentStatus::Failed, PaymentStatus::Canceled], true)) {
+            return null;
+        }
+
+        $abandonedAfter = (int) config('payment-gateway.abandoned_after_minutes', 30);
+
+        if ($fresh->created_at->lte(now()->subMinutes($abandonedAfter))) {
+            $fresh->update(['status' => PaymentStatus::Canceled]);
+
+            return null;
+        }
+
+        return $this->stillInFlight($fresh);
+    }
+
+    private function stillInFlight(Payment $payment): PaymentResult
+    {
+        return PaymentResult::success(
+            orderReference: (string) $payment->gateway_reference,
+            redirectUrl: null,
+            checkoutData: json_encode(['payment_id' => $payment->id, 'idempotent' => true], JSON_THROW_ON_ERROR),
+        );
+    }
+
     private function resolvePayable(string $alias, mixed $id): ?Payable
     {
         $class = config('payment-gateway.payables.'.$alias);

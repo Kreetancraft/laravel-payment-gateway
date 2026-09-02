@@ -5,6 +5,7 @@ use Kreetancraft\PaymentGateway\Actions\ChargePaymentAction;
 use Kreetancraft\PaymentGateway\Contracts\GatewayResolver;
 use Kreetancraft\PaymentGateway\Contracts\PaymentGateway;
 use Kreetancraft\PaymentGateway\Data\PaymentResult;
+use Kreetancraft\PaymentGateway\Data\VerificationResult;
 use Kreetancraft\PaymentGateway\Enums\PaymentStatus;
 use Kreetancraft\PaymentGateway\Models\Coupon;
 use Kreetancraft\PaymentGateway\Models\Payment;
@@ -331,5 +332,128 @@ it('sends a buyer who already paid to the success page', function (): void {
     $again = ChargePaymentAction::run(['payable_type' => 'invoice', 'payable_id' => $invoice->id]);
 
     expect($again->settled)->toBeTrue()
+        ->and(Payment::count())->toBe(1);
+});
+
+it('lets a buyer start again once an abandoned attempt is confirmed unpaid', function (): void {
+    // Seen on the bench: a pending attempt with no stored hosted-page URL — a row
+    // written before resume existed, or a gateway that gave none — blocked the
+    // payable forever. The screen said the payment had started but not
+    // completed, with no way forward and no way to start again.
+    $invoice = TestInvoice::create(['number' => 'INV-AB', 'currency' => 'USD', 'total_cents' => 500]);
+
+    $stale = Payment::factory()->create([
+        'gateway' => 'stripe',
+        'gateway_reference' => 'cs_abandoned',
+        'status' => PaymentStatus::Pending,
+        'amount_cents' => 500,
+        'currency' => 'USD',
+        'payable_type' => $invoice->getMorphClass(),
+        'payable_id' => $invoice->id,
+        'created_at' => now()->subHour(),
+        'metadata' => [],
+    ]);
+    // Give it the key the action will compute, so it is genuinely in the way.
+    $stale->update(['idempotency_key' => hash('sha256', implode(':', [
+        $invoice->getMorphClass(), (string) $invoice->id, $invoice->paymentReference(),
+        'stripe', '500', 'USD', '0',
+    ]))]);
+
+    $gateway = Mockery::mock(PaymentGateway::class);
+    $gateway->shouldReceive('supportsCurrency')->andReturn(true);
+    // The bank says it was never paid.
+    $gateway->shouldReceive('verify')->andReturn(
+        VerificationResult::failure('cs_abandoned', 'Not paid')
+    );
+    $gateway->shouldReceive('charge')->once()->andReturn(
+        PaymentResult::success(orderReference: 'cs_new', redirectUrl: 'https://checkout.example/new')
+    );
+
+    $resolver = Mockery::mock(GatewayResolver::class);
+    $resolver->shouldReceive('getDefaultDriver')->andReturn('stripe');
+    $resolver->shouldReceive('resolve')->andReturn($gateway);
+    app()->instance(GatewayResolver::class, $resolver);
+
+    $result = ChargePaymentAction::run(['payable_type' => 'invoice', 'payable_id' => $invoice->id]);
+
+    expect($result->redirectUrl)->toBe('https://checkout.example/new')
+        ->and(Payment::count())->toBe(2);
+});
+
+it('does not start a second attempt while the first is genuinely recent', function (): void {
+    // The other side of it: a buyer double-clicking must not open two sessions.
+    $invoice = TestInvoice::create(['number' => 'INV-RC', 'currency' => 'USD', 'total_cents' => 500]);
+
+    $recent = Payment::factory()->create([
+        'gateway' => 'stripe',
+        'gateway_reference' => 'cs_recent',
+        'status' => PaymentStatus::Pending,
+        'amount_cents' => 500,
+        'currency' => 'USD',
+        'payable_type' => $invoice->getMorphClass(),
+        'payable_id' => $invoice->id,
+        'created_at' => now(),
+        'metadata' => [],
+    ]);
+    $recent->update(['idempotency_key' => hash('sha256', implode(':', [
+        $invoice->getMorphClass(), (string) $invoice->id, $invoice->paymentReference(),
+        'stripe', '500', 'USD', '0',
+    ]))]);
+
+    $gateway = Mockery::mock(PaymentGateway::class);
+    $gateway->shouldReceive('supportsCurrency')->andReturn(true);
+    $gateway->shouldReceive('verify')->andReturn(
+        VerificationResult::undetermined('cs_recent', 'Still pending')
+    );
+    $gateway->shouldReceive('charge')->never();
+
+    $resolver = Mockery::mock(GatewayResolver::class);
+    $resolver->shouldReceive('getDefaultDriver')->andReturn('stripe');
+    $resolver->shouldReceive('resolve')->andReturn($gateway);
+    app()->instance(GatewayResolver::class, $resolver);
+
+    ChargePaymentAction::run(['payable_type' => 'invoice', 'payable_id' => $invoice->id]);
+
+    expect(Payment::count())->toBe(1);
+});
+
+it('sends the buyer to success if the abandoned attempt turns out to be paid', function (): void {
+    // The dangerous case. They paid, we never heard, and they came back to pay
+    // again — asking the gateway first is what stops the second charge.
+    $invoice = TestInvoice::create(['number' => 'INV-PA', 'currency' => 'USD', 'total_cents' => 500]);
+
+    $stale = Payment::factory()->create([
+        'gateway' => 'stripe',
+        'gateway_reference' => 'cs_actually_paid',
+        'status' => PaymentStatus::Pending,
+        'amount_cents' => 500,
+        'currency' => 'USD',
+        'payable_type' => $invoice->getMorphClass(),
+        'payable_id' => $invoice->id,
+        'created_at' => now()->subHour(),
+        'metadata' => [],
+    ]);
+    $stale->update(['idempotency_key' => hash('sha256', implode(':', [
+        $invoice->getMorphClass(), (string) $invoice->id, $invoice->paymentReference(),
+        'stripe', '500', 'USD', '0',
+    ]))]);
+
+    $gateway = Mockery::mock(PaymentGateway::class);
+    $gateway->shouldReceive('supportsCurrency')->andReturn(true);
+    $gateway->shouldReceive('verify')->andReturn(
+        VerificationResult::success(
+            transactionId: 'cs_actually_paid', status: 'succeeded', amount: 5.0, currency: 'USD'
+        )
+    );
+    $gateway->shouldReceive('charge')->never();
+
+    $resolver = Mockery::mock(GatewayResolver::class);
+    $resolver->shouldReceive('getDefaultDriver')->andReturn('stripe');
+    $resolver->shouldReceive('resolve')->andReturn($gateway);
+    app()->instance(GatewayResolver::class, $resolver);
+
+    $result = ChargePaymentAction::run(['payable_type' => 'invoice', 'payable_id' => $invoice->id]);
+
+    expect($result->settled)->toBeTrue()
         ->and(Payment::count())->toBe(1);
 });
