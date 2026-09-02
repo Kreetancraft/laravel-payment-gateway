@@ -240,10 +240,21 @@ class HblClient
                 $decrypted = $this->codec->decrypt($responseBody, $this->decryptionKey(), $this->pacoSigningKey(), $apiKey);
 
                 if ($httpResponse->failed()) {
+                    // PACO puts the reason in ApiResponse, not ErrorDetails.
+                    // Reading only the latter turned every rejection into a bare
+                    // "HTTP 400 from HBL gateway" with nothing to act on, while
+                    // the response said, for example, PC-B050410 "Invalid office
+                    // profile" — which names the actual problem.
+                    $code = data_get($decrypted, 'response.ApiResponse.ResponseCode');
+                    $description = data_get($decrypted, 'response.ApiResponse.ResponseDescription')
+                        ?? data_get($decrypted, 'response.ApiResponse.MarketingDescription');
+
                     $errorMsg = data_get($decrypted, 'response.ErrorDetails.Message')
                         ?? data_get($decrypted, 'response.message')
                         ?? data_get($decrypted, 'error')
-                        ?? "HTTP {$httpResponse->status()} from HBL gateway";
+                        ?? (filled($description)
+                            ? trim((filled($code) ? "{$code} " : '').$description)
+                            : "HTTP {$httpResponse->status()} from HBL gateway");
 
                     throw new RuntimeException("HBL API Error ({$httpResponse->status()}): {$errorMsg}");
                 }

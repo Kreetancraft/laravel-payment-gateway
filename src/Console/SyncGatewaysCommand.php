@@ -70,6 +70,18 @@ class SyncGatewaysCommand extends Command
             return;
         }
 
+        $existing = Gateway::where('code', $code)->first();
+
+        // Never let a sync wipe secrets. Credentials are pasted in through the
+        // admin screen and live only in the database; config almost always has
+        // an empty array here, and passing that straight into updateOrCreate
+        // silently destroyed every key an operator had entered — taking the
+        // gateway offline with no error and nothing to restore from.
+        $credentials = array_merge(
+            $config['credentials'] ?? [],
+            $existing?->credentials ?? [],
+        );
+
         $gateway = Gateway::updateOrCreate(
             ['code' => $code],
             [
@@ -83,7 +95,7 @@ class SyncGatewaysCommand extends Command
                 'supports_subscriptions' => $config['supports_subscriptions'] ?? false,
                 'environment' => $config['environment'] ?? 'demo',
                 'config_fields' => $config['config_fields'] ?? [],
-                'credentials' => $config['credentials'] ?? [],
+                'credentials' => $credentials,
             ]
         );
 

@@ -29,12 +29,14 @@
     </ol>
 
     <p class="mt-4 max-w-2xl rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
-        The payment is not settled by coming back. Both gateways leave it
-        <strong>pending</strong> until the webhook confirms it — that is deliberate, because a buyer
-        can pay and then lose their connection before the redirect lands. Stripe's test card is
+        Coming back from the hosted page does not settle the payment. Both gateways leave it
+        <strong>pending</strong> until the webhook confirms it — deliberately, because a buyer can
+        pay and then lose their connection before the redirect lands. Stripe's test card is
         <code class="rounded bg-amber-200/60 px-1 dark:bg-amber-900/60">4242 4242 4242 4242</code>,
-        any future expiry and any CVC. The HBL sandbox approves only small amounts on this account,
-        which is why the invoice is USD 5.
+        any future expiry and any CVC. PACO's sandbox takes
+        <code class="rounded bg-amber-200/60 px-1 dark:bg-amber-900/60">5399 3300 0001 2640</code>
+        (04/2027, 734). PACO accepts both USD and NPR at this office id; whether a given test card
+        authorises is a separate matter from whether the request was accepted.
     </p>
 
     @if ($invoice)

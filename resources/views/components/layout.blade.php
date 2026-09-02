@@ -17,7 +17,17 @@
             @fonts
         @endif
 
-        @vite(['resources/css/app.css', 'resources/js/app.js'])
+        {{--
+            Only when the host has actually built them. This is a package view
+            and those entry points belong to the application, so a host that
+            names its assets differently — or has simply not run a build yet —
+            used to get a ViteManifestNotFoundException. That is a 500 on
+            /payment/success: the buyer has paid, and the page telling them so is
+            the page that crashes.
+        --}}
+        @if (file_exists(public_path('hot')) || file_exists(public_path('build/manifest.json')))
+            @vite(['resources/css/app.css', 'resources/js/app.js'])
+        @endif
         @fluxAppearance
     </head>
     <body class="min-h-screen bg-zinc-50 text-zinc-900 dark:bg-zinc-900 dark:text-zinc-100 flex flex-col antialiased">
