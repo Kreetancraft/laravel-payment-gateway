@@ -161,11 +161,35 @@ class Gateway extends Model
         $this->setCredential('environment', $value);
     }
 
+    /**
+     * Should PACO be asked to run 3-D Secure on this payment?
+     *
+     * The admin screen labels this "Y/N", and `filter_var()` understands
+     * neither. It knows 1/0, true/false, yes/no and on/off; given 'N' it
+     * returns null, and the `?? true` that used to follow turned that into
+     * "yes". So the setting was write-only — every payment requested 3DS
+     * whatever the admin chose, and on a profile that cannot complete 3DS the
+     * card was submitted and then rejected before the acquirer was ever
+     * contacted. The vendor's own working demo only ever sends 'N'.
+     *
+     * `true` remains the default when the credential is simply absent, because
+     * asking for 3DS is the safer thing not to forget. A value that is present
+     * but unreadable is a configuration mistake, and quietly turning it on is
+     * how the mistake stayed hidden — so that case is now false.
+     */
     public function getHimalayanRequest3ds(): bool
     {
-        $val = $this->getCredential('request_3ds', true);
+        $value = $this->getCredential('request_3ds');
 
-        return filter_var($val, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE) ?? true;
+        if ($value === null || $value === '') {
+            return true;
+        }
+
+        if (is_bool($value)) {
+            return $value;
+        }
+
+        return in_array(strtolower(trim((string) $value)), ['y', 'yes', 'true', '1', 'on'], true);
     }
 
     public function setHimalayanRequest3ds(bool $value): void

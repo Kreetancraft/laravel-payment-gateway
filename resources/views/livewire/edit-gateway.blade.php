@@ -59,6 +59,27 @@
                                 @php($fType = is_array($field) ? ($field['type'] ?? 'text') : 'text')
                                 @php($fLabel = is_array($field) ? ($field['label'] ?? $fKey) : $fKey)
                                 @php($fDesc = is_array($field) ? ($field['description'] ?? '') : '')
+                                @php($fOptions = is_array($field) ? ($field['options'] ?? []) : [])
+
+                                {{--
+                                    A boolean is a toggle, not a text box. This
+                                    field used to fall through to a plain input,
+                                    so "Enable 3D Secure" accepted the string "N"
+                                    — which the reader could not parse and turned
+                                    into "yes". Every HBL payment then asked for
+                                    3DS whatever the admin chose. A switch cannot
+                                    produce that value at all.
+                                --}}
+                                @if ($fType === 'checkbox')
+                                    <flux:switch
+                                        :wire:key="'field-'.$fKey"
+                                        wire:model="fieldValues.{{ $fKey }}"
+                                        :label="$fLabel"
+                                        :description="filled($fDesc) ? $fDesc : null"
+                                    />
+
+                                    @continue
+                                @endif
 
                                 <flux:field :wire:key="'field-'.$fKey">
                                     <flux:label>{{ $fLabel }}</flux:label>
@@ -70,6 +91,12 @@
                                             class="font-mono text-xs"
                                             placeholder="-----BEGIN RSA PRIVATE KEY-----&#10;...&#10;-----END RSA PRIVATE KEY-----"
                                         />
+                                    @elseif ($fType === 'select')
+                                        <flux:select wire:model="fieldValues.{{ $fKey }}">
+                                            @foreach ($fOptions as $optValue => $optLabel)
+                                                <flux:select.option value="{{ $optValue }}">{{ $optLabel }}</flux:select.option>
+                                            @endforeach
+                                        </flux:select>
                                     @elseif ($fType === 'password')
                                         <flux:input
                                             type="password"

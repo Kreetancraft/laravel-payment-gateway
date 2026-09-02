@@ -48,12 +48,37 @@ class EditGateway extends Component
             $fieldKey = is_array($field) ? ($field['key'] ?? (string) $key) : (string) $key;
             $rawVal = $gateway->getCredential($fieldKey) ?? ($field['default'] ?? '');
 
-            if (is_array($rawVal)) {
-                $this->fieldValues[$fieldKey] = implode(', ', $rawVal);
-            } else {
-                $this->fieldValues[$fieldKey] = (string) ($rawVal ?? '');
-            }
+            $type = is_array($field) ? ($field['type'] ?? 'text') : 'text';
+
+            $this->fieldValues[$fieldKey] = match (true) {
+                is_array($rawVal) => implode(', ', $rawVal),
+                // A toggle binds to a real boolean. Casting it to a string first
+                // gave the switch "1" or "" and saved that back as text, which is
+                // how a boolean setting ended up holding characters that nothing
+                // could parse.
+                $type === 'checkbox' => $this->asBoolean($rawVal),
+                default => (string) ($rawVal ?? ''),
+            };
         }
+    }
+
+    /**
+     * Read a stored setting as a boolean.
+     *
+     * Older rows hold whatever the plain text box accepted — 'Y', 'N', '1', ''
+     * — so a toggle has to understand all of it to show the right position.
+     */
+    private function asBoolean(mixed $value): bool
+    {
+        if (is_bool($value)) {
+            return $value;
+        }
+
+        if ($value === null || $value === '') {
+            return true;
+        }
+
+        return in_array(strtolower(trim((string) $value)), ['y', 'yes', 'true', '1', 'on'], true);
     }
 
     public function save(): void
