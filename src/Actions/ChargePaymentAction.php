@@ -277,10 +277,19 @@ class ChargePaymentAction
             $currency,
             // Closed attempts stay in the table and the column is unique, so a
             // retry needs a key of its own.
-            (string) Payment::query()
+            //
+            // Soft-deleted rows count too. `idempotency_key` is unique across
+            // every row, deleted or not, while the guard below only queries live
+            // ones — so deleting a payment left its key occupying the index
+            // invisibly, and the next attempt at the same amount died on a raw
+            // UniqueConstraintViolationException the buyer could do nothing
+            // about. Counting deletions here moves the key on instead.
+            (string) Payment::withTrashed()
                 ->where('payable_type', $payable->getMorphClass())
                 ->where('payable_id', $payable->getKey())
-                ->whereIn('status', [PaymentStatus::Failed, PaymentStatus::Canceled])
+                ->where(fn ($query) => $query
+                    ->whereIn('status', [PaymentStatus::Failed, PaymentStatus::Canceled])
+                    ->orWhereNotNull('deleted_at'))
                 ->count(),
         ]));
     }

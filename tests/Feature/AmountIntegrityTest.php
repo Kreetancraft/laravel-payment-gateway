@@ -457,3 +457,22 @@ it('sends the buyer to success if the abandoned attempt turns out to be paid', f
     expect($result->settled)->toBeTrue()
         ->and(Payment::count())->toBe(1);
 });
+
+it('lets a buyer pay after an old attempt was deleted', function (): void {
+    // Payment soft-deletes, and `idempotency_key` is unique across every row
+    // including deleted ones — but the in-flight guard only queries live rows.
+    // So a deleted payment kept its key in the index invisibly, and the next
+    // attempt at the same amount died on a raw UniqueConstraintViolation the
+    // buyer could do nothing about.
+    fakeGatewayAccepting();
+
+    $invoice = TestInvoice::create(['number' => 'INV-DEL', 'currency' => 'USD', 'total_cents' => 500]);
+
+    ChargePaymentAction::run(['payable_type' => 'invoice', 'payable_id' => $invoice->id]);
+    Payment::first()->delete();
+
+    $result = ChargePaymentAction::run(['payable_type' => 'invoice', 'payable_id' => $invoice->id]);
+
+    expect($result->success)->toBeTrue()
+        ->and(Payment::count())->toBe(1);
+});
