@@ -63,15 +63,27 @@ class ManageTransactions extends Component
 
         $result = RefundPaymentAction::forPayment($payment);
 
-        if ($result->successful()) {
-            if (class_exists(Flux::class) && app()->bound('flux')) {
-                Flux::toast(variant: 'success', text: __('Refund of $:amount processed successfully.', ['amount' => $payment->amount]));
-            }
-        } else {
-            if (class_exists(Flux::class) && app()->bound('flux')) {
-                Flux::toast(variant: 'danger', text: __('Refund failed: :error', ['error' => $result->errorMessage]));
-            }
+        if (! class_exists(Flux::class) || ! app()->bound('flux')) {
+            return;
         }
+
+        if (! $result->success) {
+            Flux::toast(variant: 'danger', text: __('Refund failed: :error', ['error' => $result->errorMessage]));
+
+            return;
+        }
+
+        // `$result->successful()` does not exist on RefundResult, and Data has no
+        // __call, so pressing Refund threw "Call to undefined method" every time
+        // — the only refund button in the package could never have worked. The
+        // suite missed it because the tests call the action directly and never
+        // drive this component.
+        //
+        // `$payment->amount` does not exist either, so the message read
+        // "Refund of $ processed successfully."
+        Flux::toast(variant: 'success', text: __('Refund of :amount processed successfully.', [
+            'amount' => strtoupper($payment->currency).' '.number_format($result->amount, 2),
+        ]));
     }
 
     /**
@@ -138,9 +150,14 @@ class ManageTransactions extends Component
                 fputcsv($handle, [
                     $p->reference,
                     $p->gateway,
-                    $p->amount,
+                    // Not `$p->amount` — there is no such attribute, so this
+                    // column was blank in every CSV ever exported.
+                    number_format($p->amount_cents / 100, 2, '.', ''),
                     $p->currency,
-                    $p->status,
+                    // The enum itself, not its value, was written here — and
+                    // fputcsv cannot convert an enum to a string, so the export
+                    // did not merely lose a column, it threw.
+                    $p->status->value,
                     $p->customer_email ?? 'N/A',
                     $p->created_at->format('Y-m-d H:i:s'),
                 ]);

@@ -28,7 +28,12 @@ class HimalayanBankGateway extends AbstractGateway
         $orderNo = $this->generateOrderNo($data['reference_seed'] ?? Str::random(8));
         $currency = $this->resolveCurrency($data['currency'] ?? 'NPR');
         // Respect gateway's 3DS toggle (WP parity: Enable/Disable 3D Secure), allow per-request override
-        $request3ds = $data['request_3ds'] ?? $this->gateway->getHimalayanRequest3ds();
+        // Not overridable from the request. `POST /payment/checkout` is public,
+        // and the whole body used to be spread into this method — so anyone
+        // could send `request_3ds=false` and turn off 3-D Secure for a payment,
+        // moving chargeback liability onto the merchant. Whether to ask for 3DS
+        // is the merchant's decision, and it lives on the gateway.
+        $request3ds = $this->gateway->getHimalayanRequest3ds();
 
         try {
             $confirmationUrl = $this->resolveRedirectUrl('success', ['order' => $orderNo, 'reference' => $orderNo, 'orderNo' => $orderNo], $data['return_url'] ?? null);

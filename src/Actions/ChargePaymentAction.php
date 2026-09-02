@@ -191,7 +191,7 @@ class ChargePaymentAction
         ]);
 
         $result = $gateway->charge([
-            ...$data,
+            ...$this->withoutCallerControlledSettings($data),
             'amount_cents' => $amountCents,
             'currency' => $currency,
             'reference_seed' => $payable->paymentReference(),
@@ -375,6 +375,47 @@ class ChargePaymentAction
             redirectUrl: null,
             checkoutData: json_encode(['payment_id' => $payment->id, 'idempotent' => true], JSON_THROW_ON_ERROR),
         );
+    }
+
+    /**
+     * Drop the fields a public caller must not get to choose.
+     *
+     * `POST /payment/checkout` is public, and the request body used to be spread
+     * straight into the gateway. Two of those fields are decisions, not data:
+     *
+     *   request_3ds  turning off 3-D Secure moves chargeback liability onto the
+     *                merchant. It belongs to whoever configured the gateway.
+     *   return_url   becomes Stripe's success_url, so an arbitrary value is an
+     *                open redirect off the merchant's own checkout that also
+     *                hands the session id to whoever chose it.
+     *
+     * `return_url` is still honoured when it points back at this application,
+     * because a host legitimately uses it to land the buyer on its own page.
+     *
+     * @param  array<string, mixed>  $data
+     * @return array<string, mixed>
+     */
+    private function withoutCallerControlledSettings(array $data): array
+    {
+        unset($data['request_3ds']);
+
+        if (isset($data['return_url']) && ! $this->pointsAtThisApplication((string) $data['return_url'])) {
+            unset($data['return_url']);
+        }
+
+        return $data;
+    }
+
+    private function pointsAtThisApplication(string $url): bool
+    {
+        $host = parse_url($url, PHP_URL_HOST);
+
+        if ($host === null || $host === false) {
+            // A relative path never leaves this application.
+            return true;
+        }
+
+        return strcasecmp($host, (string) parse_url((string) config('app.url'), PHP_URL_HOST)) === 0;
     }
 
     private function resolvePayable(string $alias, mixed $id): ?Payable
