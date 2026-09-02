@@ -141,6 +141,13 @@ class HandleWebhookAction
         }
 
         if ($gateway === 'himalayan') {
+            // Deliberate, not an oversight. PACO does not sign its notification,
+            // and it does not need to: HimalayanBankGateway::webhook() reads only
+            // the order number from the body and then calls verify(), a signed
+            // JOSE inquiry, taking the outcome from the bank's own response. A
+            // forged payload cannot assert that a payment succeeded — the worst
+            // it can do is make us ask about an order number, which is why the
+            // route is rate limited.
             return true;
         }
 

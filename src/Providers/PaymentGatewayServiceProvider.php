@@ -8,6 +8,8 @@ use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
 use Kreetancraft\PaymentGateway\Console\InstallCommand;
+use Kreetancraft\PaymentGateway\Console\ReconcilePendingCommand;
+use Kreetancraft\PaymentGateway\Console\StatusCommand;
 use Kreetancraft\PaymentGateway\Console\SyncGatewaysCommand;
 use Kreetancraft\PaymentGateway\Contracts\GatewayResolver;
 use Kreetancraft\PaymentGateway\Contracts\PaymentGateway;
@@ -85,6 +87,8 @@ class PaymentGatewayServiceProvider extends ServiceProvider
         if ($this->app->runningInConsole()) {
             $this->commands([
                 InstallCommand::class,
+                ReconcilePendingCommand::class,
+                StatusCommand::class,
                 SyncGatewaysCommand::class,
             ]);
         }
