@@ -1,7 +1,5 @@
 <?php
 
-declare(strict_types=1);
-
 namespace Kreetancraft\PaymentGateway\Models;
 
 use Kreetancraft\PaymentGateway\Contracts\GatewayConfig as GatewayConfigContract;

@@ -1,7 +1,5 @@
 <?php
 
-declare(strict_types=1);
-
 namespace Kreetancraft\PaymentGateway\Database\Factories;
 
 use Illuminate\Database\Eloquent\Factories\Factory;

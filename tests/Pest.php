@@ -1,7 +1,5 @@
 <?php
 
-declare(strict_types=1);
-
 use Kreetancraft\PaymentGateway\Tests\TestCase;
 
 spl_autoload_register(function (string $class): void {

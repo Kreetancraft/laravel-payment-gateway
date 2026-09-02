@@ -1,7 +1,5 @@
 <?php
 
-declare(strict_types=1);
-
 use Kreetancraft\PaymentGateway\Gateways\HimalayanBankGateway;
 use Kreetancraft\PaymentGateway\Gateways\StripeGateway;
 
@@ -45,6 +43,13 @@ return [
     'gateways' => [
         'stripe' => [
             'class' => StripeGateway::class,
+
+            // Pin the Stripe API version deliberately, or leave null to take
+            // whatever the installed SDK defaults to. This used to be hardcoded
+            // to '2026-08-26.dahlia', which matches no documented release — and
+            // an unknown version fails every call. Verify any value here against
+            // the account before shipping it.
+            'api_version' => env('STRIPE_API_VERSION'),
             'label' => 'Pay with Stripe',
             'icon' => 'https://cdn.brandfetch.io/idxAg10C0L/theme/dark/logo.svg?c=1dxbfHSJFAPEGdCLU4o5B',
             'currencies' => ['USD', 'EUR', 'GBP', 'INR', 'NPR', 'AUD', 'CAD'],

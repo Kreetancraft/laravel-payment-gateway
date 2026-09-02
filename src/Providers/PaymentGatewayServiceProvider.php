@@ -1,7 +1,5 @@
 <?php
 
-declare(strict_types=1);
-
 namespace Kreetancraft\PaymentGateway\Providers;
 
 use Illuminate\Foundation\AliasLoader;

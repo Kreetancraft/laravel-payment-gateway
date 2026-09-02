@@ -1,7 +1,5 @@
 <?php
 
-declare(strict_types=1);
-
 use Illuminate\Auth\GenericUser;
 use Kreetancraft\PaymentGateway\Models\Coupon;
 use Kreetancraft\PaymentGateway\Models\Gateway;

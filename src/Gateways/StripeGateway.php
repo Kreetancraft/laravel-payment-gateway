@@ -1,7 +1,5 @@
 <?php
 
-declare(strict_types=1);
-
 namespace Kreetancraft\PaymentGateway\Gateways;
 
 use Exception;
@@ -24,10 +22,14 @@ class StripeGateway extends AbstractGateway
     public function __construct(Gateway $gateway, ?StripeClient $client = null)
     {
         parent::__construct($gateway);
-        $this->client = $client ?? new StripeClient([
+        // The version was hardcoded to a string that does not match any
+        // documented release. An unknown API version fails every call, and it is
+        // not the sort of thing to guess at — pin it in config, per environment,
+        // and verify it against the account before shipping.
+        $this->client = $client ?? new StripeClient(array_filter([
             'api_key' => (string) $this->gateway->getStripeSecretKey(),
-            'stripe_version' => '2026-08-26.dahlia',
-        ]);
+            'stripe_version' => config('payment-gateway.gateways.stripe.api_version'),
+        ]));
     }
 
     public function charge(array $data): PaymentResult
@@ -37,21 +39,17 @@ class StripeGateway extends AbstractGateway
                 'amount' => $data['amount_cents'],
                 'currency' => strtolower($data['currency']),
                 'description' => $data['description'] ?? '',
-                'metadata' => array_merge(
-                    $data['metadata'] ?? [],
-                    [
-                        'customer_email' => $data['customer_email'] ?? '',
-                        'customer_name' => $data['customer_name'] ?? '',
-                        'customer_phone' => $data['customer_phone'] ?? '',
-                        'customer_address' => $data['customer_address'] ?? '',
-                    ]
-                ),
+                // Metadata is not a place for personal data — it is visible in
+                // the Dashboard, in exports and in logs. The buyer's email
+                // travels as receipt_email, which is what it is for; the rest
+                // belongs on a Customer object if it is needed at all.
+                'metadata' => $data['metadata'] ?? [],
                 'receipt_email' => $data['customer_email'] ?? null,
                 'setup_future_usage' => $data['setup_future_usage'] ?? null,
                 'automatic_payment_methods' => [
                     'enabled' => true,
                 ],
-            ]);
+            ], $this->idempotencyOptions($data));
 
             return PaymentResult::success(
                 orderReference: $paymentIntent->id,
@@ -68,6 +66,23 @@ class StripeGateway extends AbstractGateway
                 errorCode: $e->getStripeCode() ?? (string) $e->getCode()
             );
         }
+    }
+
+    /**
+     * Stripe's own idempotency, on top of the local check.
+     *
+     * The database lookup in ChargePaymentAction only stops a second row being
+     * written here; it does nothing at Stripe's end, so a retried request that
+     * got past it could still create a second PaymentIntent and charge twice.
+     *
+     * @param  array<string, mixed>  $data
+     * @return array<string, string>
+     */
+    private function idempotencyOptions(array $data): array
+    {
+        $seed = (string) ($data['reference_seed'] ?? $data['order_reference'] ?? '');
+
+        return $seed === '' ? [] : ['idempotency_key' => 'charge:'.$seed];
     }
 
     public function refund(string $transactionId, float $amount): RefundResult

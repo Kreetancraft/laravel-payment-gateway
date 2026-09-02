@@ -1,7 +1,5 @@
 <?php
 
-declare(strict_types=1);
-
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Kreetancraft\PaymentGateway\Gateways\StripeGateway;
 use Kreetancraft\PaymentGateway\Livewire\CreateCoupon;
