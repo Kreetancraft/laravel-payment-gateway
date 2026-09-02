@@ -21,15 +21,15 @@ class VerifyPaymentAction
      */
     public function handle(array $data): VerificationResult
     {
-        $lookupKey = (string) (
-            $data['reference']
-            ?? $data['order']
-            ?? $data['order_no']
-            ?? $data['orderNo']
-            ?? $data['transaction_id']
-            ?? $data['payment_intent_id']
-            ?? ''
-        );
+        // `??` only falls through on null, and these arrive from a query string
+        // where an unset value is an empty *string*. A Stripe return carrying
+        // `?reference=&session_id=cs_test_...` therefore stopped at the blank
+        // reference and never looked at the session id — which was not in this
+        // list at all — so no payment was found.
+        $lookupKey = $this->firstFilled($data, [
+            'reference', 'order', 'order_no', 'orderNo',
+            'transaction_id', 'payment_intent_id', 'session_id',
+        ]);
 
         $payment = null;
         if (filled($lookupKey)) {
@@ -39,7 +39,20 @@ class VerifyPaymentAction
                 ->first();
         }
 
-        $gatewayCode = (string) ($data['gateway'] ?? ($payment?->gateway ?? ''));
+        $gatewayCode = $this->firstFilled($data, ['gateway']) ?: (string) ($payment?->gateway ?? '');
+
+        // Only guess when there is genuinely nothing to go on. With a lookup key
+        // that matched nothing, falling back to the default driver handed a
+        // Stripe session id to the bank's verifier — the query log showed
+        // `payment_gateways where code = 'himalayan'` on a Stripe return — and
+        // the buyer was told their payment had failed.
+        if (blank($gatewayCode) && filled($lookupKey)) {
+            return VerificationResult::failure(
+                transactionId: $lookupKey,
+                errorMessage: 'No payment matches that reference, so there is no gateway to ask about it.',
+                reference: $lookupKey,
+            );
+        }
 
         if (blank($gatewayCode)) {
             $gatewayCode = (string) ($this->resolver->getDefaultDriver() ?? 'stripe');
@@ -63,6 +76,23 @@ class VerifyPaymentAction
         }
 
         return $result;
+    }
+
+    /**
+     * The first of these keys with a non-blank value.
+     *
+     * @param  array<string, mixed>  $data
+     * @param  list<string>  $keys
+     */
+    private function firstFilled(array $data, array $keys): string
+    {
+        foreach ($keys as $key) {
+            if (filled($data[$key] ?? null)) {
+                return (string) $data[$key];
+            }
+        }
+
+        return '';
     }
 
     private function updatePaymentRecord(Payment $payment, VerificationResult $result): void

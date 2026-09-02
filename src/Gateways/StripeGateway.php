@@ -145,6 +145,17 @@ class StripeGateway extends AbstractGateway
      */
     private function idempotencyOptions(array $data): array
     {
+        // Prefer the key the caller computed: it covers the payable, the
+        // gateway, the amount and the attempt. The reference seed alone is the
+        // invoice number, which never changes — so applying a coupon and paying
+        // again reached Stripe with the first request's key and a different
+        // amount, and Stripe refused it outright.
+        $key = (string) ($data['idempotency_key'] ?? '');
+
+        if ($key !== '') {
+            return ['idempotency_key' => 'charge:'.$key];
+        }
+
         $seed = (string) ($data['reference_seed'] ?? $data['order_reference'] ?? '');
 
         return $seed === '' ? [] : ['idempotency_key' => 'charge:'.$seed];

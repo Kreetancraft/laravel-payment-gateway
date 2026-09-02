@@ -75,6 +75,29 @@ class Payment extends Model
      * sells. Nullable so an application that has not adopted the Payable
      * contract keeps working.
      */
+    /**
+     * The checkout alias for this payment's payable, or null.
+     *
+     * `payable_type` holds the morph class; checkout takes the alias from the
+     * `payables` allowlist. Reversing the map is what lets a failed or cancelled
+     * payment offer a retry link that still knows what was being bought —
+     * without it the buyer is sent to a checkout with nothing in it.
+     */
+    public function payableAlias(): ?string
+    {
+        if (blank($this->payable_type)) {
+            return null;
+        }
+
+        foreach ((array) config('payment-gateway.payables', []) as $alias => $class) {
+            if ($this->payable_type === $class || $this->payable_type === $alias) {
+                return (string) $alias;
+            }
+        }
+
+        return null;
+    }
+
     public function payable(): MorphTo
     {
         return $this->morphTo();

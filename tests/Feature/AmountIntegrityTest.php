@@ -6,6 +6,7 @@ use Kreetancraft\PaymentGateway\Contracts\GatewayResolver;
 use Kreetancraft\PaymentGateway\Contracts\PaymentGateway;
 use Kreetancraft\PaymentGateway\Data\PaymentResult;
 use Kreetancraft\PaymentGateway\Enums\PaymentStatus;
+use Kreetancraft\PaymentGateway\Models\Coupon;
 use Kreetancraft\PaymentGateway\Models\Payment;
 use Kreetancraft\PaymentGateway\Tests\Fixtures\Models\TestInvoice;
 
@@ -241,4 +242,51 @@ it('still refuses a second attempt while one is in flight', function (): void {
     ChargePaymentAction::run(['payable_type' => 'invoice', 'payable_id' => $invoice->id]);
 
     expect(Payment::count())->toBe(1);
+});
+
+it('gives the gateway a key that changes with the amount', function (): void {
+    // Found on the bench, against real Stripe: the key handed to the gateway was
+    // "charge:" plus the payable reference, which is the invoice number and
+    // never changes. Applying a coupon and paying sent the first request's key
+    // with a smaller amount, and Stripe refused outright —
+    //   "Keys for idempotent requests can only be used with the same parameters
+    //    they were first used with."
+    // The buyer could not pay at all once they used a discount.
+    $keys = [];
+    fakeGatewayAccepting(function (array $data) use (&$keys): void {
+        $keys[] = $data['idempotency_key'] ?? null;
+    });
+
+    Coupon::create([
+        'code' => 'TENOFF', 'name' => 'Ten off', 'type' => 'fixed',
+        'value' => 100, 'is_active' => true,
+    ]);
+
+    $full = TestInvoice::create(['number' => 'INV-K1', 'currency' => 'USD', 'total_cents' => 50000]);
+    $discounted = TestInvoice::create(['number' => 'INV-K2', 'currency' => 'USD', 'total_cents' => 50000]);
+
+    ChargePaymentAction::run(['payable_type' => 'invoice', 'payable_id' => $full->id]);
+    ChargePaymentAction::run(['payable_type' => 'invoice', 'payable_id' => $discounted->id, 'coupon' => 'TENOFF']);
+
+    expect($keys)->toHaveCount(2)
+        ->and($keys[0])->not->toBeNull()
+        ->and($keys[0])->not->toBe($keys[1]);
+});
+
+it('still sends the same key for a genuine double submit', function (): void {
+    // The other half: two identical clicks must collapse, or the buyer is
+    // charged twice.
+    $keys = [];
+    fakeGatewayAccepting(function (array $data) use (&$keys): void {
+        $keys[] = $data['idempotency_key'] ?? null;
+    });
+
+    $invoice = TestInvoice::create(['number' => 'INV-K3', 'currency' => 'USD', 'total_cents' => 2500]);
+
+    ChargePaymentAction::run(['payable_type' => 'invoice', 'payable_id' => $invoice->id]);
+    ChargePaymentAction::run(['payable_type' => 'invoice', 'payable_id' => $invoice->id]);
+
+    // The second never reaches the gateway — the in-flight guard stops it.
+    expect(Payment::count())->toBe(1)
+        ->and($keys)->toHaveCount(1);
 });

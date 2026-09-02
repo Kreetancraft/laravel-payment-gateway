@@ -140,6 +140,14 @@ class ChargePaymentAction
             (string) $payable->getKey(),
             $payable->paymentReference(),
             $gatewayCode,
+            // The amount belongs in the key. A gateway rejects a reused
+            // idempotency key that arrives with different parameters, so
+            // without this a buyer who applied a coupon after a first attempt
+            // got a hard failure from Stripe rather than a cheaper checkout.
+            // It also means a deliberate change of amount is a new attempt,
+            // while a double-submit of the same one still collapses.
+            (string) $amountCents,
+            $currency,
             // Failed attempts stay in the table and the column is unique, so a
             // retry needs a key of its own. Counting them keys each attempt
             // distinctly while still collapsing a double-submit of the same one.
@@ -202,6 +210,16 @@ class ChargePaymentAction
             'amount_cents' => $amountCents,
             'currency' => $currency,
             'reference_seed' => $payable->paymentReference(),
+            // The payment's own reference, which exists because the row is
+            // written before the charge. Gateways put this in the URLs the buyer
+            // returns to, and it is what the success page looks the payment up
+            // by. Without it `reference=` came back empty and the buyer who had
+            // just paid was told the payment could not be verified.
+            'order_reference' => $payment->reference,
+            // The gateway should use the same key this action already computed,
+            // rather than deriving its own from the payable reference — that one
+            // is constant for the life of the invoice.
+            'idempotency_key' => $idempotencyKey,
             'description' => $paymentData['description'],
         ]);
 
