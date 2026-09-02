@@ -170,10 +170,20 @@ class ChargePaymentAction
             ->first();
 
         if ($existing !== null) {
+            // Hand back the hosted page this attempt already has, so the buyer
+            // resumes it. Returning no redirect URL left them on a screen saying
+            // the payment had started but not completed, with no way forward and
+            // no way to try again — the attempt they had abandoned blocked every
+            // later one until it timed out.
             return PaymentResult::success(
                 orderReference: (string) $existing->gateway_reference,
-                redirectUrl: null,
-                checkoutData: json_encode(['payment_id' => $existing->id, 'idempotent' => true], JSON_THROW_ON_ERROR)
+                redirectUrl: $existing->status === PaymentStatus::Pending
+                    ? ($existing->metadata['redirect_url'] ?? null)
+                    : null,
+                checkoutData: json_encode(['payment_id' => $existing->id, 'idempotent' => true], JSON_THROW_ON_ERROR),
+                // Already paid: the screen sends them to the success page rather
+                // than asking them to pay for it a second time.
+                settled: $existing->status === PaymentStatus::Succeeded,
             );
         }
 
@@ -242,6 +252,12 @@ class ChargePaymentAction
             'gateway_reference' => $result->orderReference,
             'status' => $result->settled ? PaymentStatus::Succeeded : PaymentStatus::Pending,
             'paid_at' => $result->settled ? now() : null,
+            // Kept so a buyer who comes back to checkout can be returned to the
+            // same hosted page instead of being told to wait.
+            'metadata' => array_filter([
+                ...(array) ($payment->metadata ?? []),
+                'redirect_url' => $result->redirectUrl,
+            ], fn ($value): bool => $value !== null),
         ]);
 
         // The buyer is about to leave for the gateway's own page. If they never

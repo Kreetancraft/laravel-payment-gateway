@@ -290,3 +290,46 @@ it('still sends the same key for a genuine double submit', function (): void {
     expect(Payment::count())->toBe(1)
         ->and($keys)->toHaveCount(1);
 });
+
+it('sends a returning buyer back to the page they left', function (): void {
+    // Reported from the bench: start a payment, come back to checkout, and the
+    // screen said "the payment was started but has not completed" with no
+    // redirect and no way forward. The in-flight guard returned success with a
+    // null redirect URL, so the abandoned attempt blocked every later one.
+    $redirecting = Mockery::mock(PaymentGateway::class);
+    $redirecting->shouldReceive('supportsCurrency')->andReturn(true);
+    $redirecting->shouldReceive('charge')->once()->andReturn(
+        PaymentResult::success(orderReference: 'cs_1', redirectUrl: 'https://checkout.example/session/cs_1')
+    );
+
+    $resolver = Mockery::mock(GatewayResolver::class);
+    $resolver->shouldReceive('getDefaultDriver')->andReturn('stripe');
+    $resolver->shouldReceive('resolve')->andReturn($redirecting);
+    app()->instance(GatewayResolver::class, $resolver);
+
+    $invoice = TestInvoice::create(['number' => 'INV-RS', 'currency' => 'USD', 'total_cents' => 5000]);
+
+    ChargePaymentAction::run(['payable_type' => 'invoice', 'payable_id' => $invoice->id]);
+
+    // Second attempt: no new charge, but the buyer gets the same page back.
+    $again = ChargePaymentAction::run(['payable_type' => 'invoice', 'payable_id' => $invoice->id]);
+
+    expect(Payment::count())->toBe(1)
+        ->and($again->success)->toBeTrue()
+        ->and($again->redirectUrl)->toBe('https://checkout.example/session/cs_1');
+});
+
+it('sends a buyer who already paid to the success page', function (): void {
+    // The other half: they paid, came back to checkout, and were told to wait.
+    fakeGatewayAccepting();
+
+    $invoice = TestInvoice::create(['number' => 'INV-PD', 'currency' => 'USD', 'total_cents' => 5000]);
+
+    ChargePaymentAction::run(['payable_type' => 'invoice', 'payable_id' => $invoice->id]);
+    Payment::first()->update(['status' => PaymentStatus::Succeeded, 'paid_at' => now()]);
+
+    $again = ChargePaymentAction::run(['payable_type' => 'invoice', 'payable_id' => $invoice->id]);
+
+    expect($again->settled)->toBeTrue()
+        ->and(Payment::count())->toBe(1);
+});

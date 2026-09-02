@@ -4,6 +4,7 @@ namespace Kreetancraft\PaymentGateway\Livewire;
 
 use Flux\Flux;
 use Illuminate\Contracts\View\View;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Str;
 use Kreetancraft\PaymentGateway\Layout;
 use Kreetancraft\PaymentGateway\Models\Coupon;
@@ -103,22 +104,43 @@ class ManageCoupons extends Component
         }
     }
 
+    /**
+     * The list as filtered on screen, shared with the export.
+     *
+     * @return Builder<Coupon>
+     */
+    private function filteredQuery(): Builder
+    {
+        return Coupon::query()
+            ->when($this->search !== '', fn (Builder $q) => $q->where(
+                fn (Builder $sub) => $sub->where('code', 'like', "%{$this->search}%")
+                    ->orWhere('name', 'like', "%{$this->search}%")
+            ))
+            ->when($this->typeFilter !== '', fn (Builder $q) => $q->where('type', $this->typeFilter))
+            ->when($this->statusFilter === 'active', fn (Builder $q) => $q->where('is_active', true)
+                ->where(fn (Builder $sq) => $sq->whereNull('expires_at')->orWhere('expires_at', '>', now())))
+            ->when($this->statusFilter === 'inactive', fn (Builder $q) => $q->where(
+                fn (Builder $sq) => $sq->where('is_active', false)->orWhere('expires_at', '<=', now())
+            ))
+            ->orderBy($this->sort, $this->direction);
+    }
+
     public function exportCsv(): StreamedResponse
     {
         $this->authorize('viewAny', Coupon::class);
-
-        $coupons = Coupon::orderBy('created_at', 'desc')->get();
 
         $headers = [
             'Content-Type' => 'text/csv',
             'Content-Disposition' => 'attachment; filename="coupons_'.date('Y-m-d').'.csv"',
         ];
 
-        return response()->stream(function () use ($coupons): void {
+        $query = $this->filteredQuery();
+
+        return response()->stream(function () use ($query): void {
             $handle = fopen('php://output', 'w');
             fputcsv($handle, ['Code', 'Name', 'Type', 'Value', 'Usage Count', 'Usage Limit', 'Status', 'Expires At', 'Created At']);
 
-            foreach ($coupons as $coupon) {
+            foreach ($query->lazy() as $coupon) {
                 fputcsv($handle, [
                     $coupon->code,
                     $coupon->name,
@@ -141,14 +163,7 @@ class ManageCoupons extends Component
     {
         $this->authorize('viewAny', Coupon::class);
 
-        $query = Coupon::query()
-            ->when($this->search !== '', fn ($q) => $q->where(fn ($sub) => $sub->where('code', 'like', "%{$this->search}%")->orWhere('name', 'like', "%{$this->search}%")))
-            ->when($this->typeFilter !== '', fn ($q) => $q->where('type', $this->typeFilter))
-            ->when($this->statusFilter === 'active', fn ($q) => $q->where('is_active', true)->where(fn ($sq) => $sq->whereNull('expires_at')->orWhere('expires_at', '>', now())))
-            ->when($this->statusFilter === 'inactive', fn ($q) => $q->where(fn ($sq) => $sq->where('is_active', false)->orWhere('expires_at', '<=', now())))
-            ->orderBy($this->sort, $this->direction);
-
-        $coupons = $query->paginate(15);
+        $coupons = $this->filteredQuery()->paginate(15);
         $totalCount = Coupon::count();
         $activeCount = Coupon::where('is_active', true)->where(fn ($q) => $q->whereNull('expires_at')->orWhere('expires_at', '>', now()))->count();
         $totalRedemptions = CouponUsage::sum('usage_count') ?: Coupon::sum('usage_count');

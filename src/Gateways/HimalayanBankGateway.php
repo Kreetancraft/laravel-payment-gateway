@@ -269,13 +269,34 @@ class HimalayanBankGateway extends AbstractGateway
             $isCancelled = in_array($rawStatus, ['C', 'CANCELLED', 'CANCELED', 'USER_CANCELLED'], true);
             $statusNormalized = $isCancelled ? 'cancelled' : 'failed';
 
+            // "Gateway Status: F" on its own is not something anyone can act on.
+            // PACO carries the useful detail in other fields, and which of them
+            // are filled says where it went wrong: a null PspReferenceNo with no
+            // approval code means it never reached the card acquirer at all, so
+            // the problem is the request or the merchant profile rather than the
+            // buyer's card.
+            $detail = array_filter([
+                'step' => data_get($tx, 'PaymentStatusInfo.PaymentStep'),
+                'reason' => data_get($tx, 'FailedReason'),
+                'psp' => data_get($tx, 'PspResponse'),
+                'auth' => data_get($tx, 'AuthenticationStatus'),
+                'acquirer' => data_get($tx, 'PspReferenceNo') ? 'reached' : 'not reached',
+            ], fn ($value): bool => filled($value));
+
+            $detailText = implode(', ', array_map(
+                fn (string $key, mixed $value): string => "{$key}: {$value}",
+                array_keys($detail),
+                $detail,
+            ));
+
             return new VerificationResult(
                 success: false,
                 transactionId: $orderNo,
                 status: $statusNormalized,
                 amount: $amount,
                 currency: $currency,
-                errorMessage: "Transaction {$statusNormalized} (Gateway Status: {$rawStatus})",
+                errorMessage: "Transaction {$statusNormalized} (gateway status: {$rawStatus}"
+                    .($detailText !== '' ? "; {$detailText}" : '').')',
                 reference: $orderNo,
             );
         } catch (Throwable $e) {
