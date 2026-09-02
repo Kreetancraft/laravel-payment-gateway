@@ -391,36 +391,6 @@ class HimalayanBankGateway extends AbstractGateway
         ];
     }
 
-    private function resolveRedirectUrl(string $type, array $params = [], ?string $overrideUrl = null): string
-    {
-        $query = http_build_query($params);
-
-        if (filled($overrideUrl)) {
-            $separator = str_contains($overrideUrl, '?') ? '&' : '?';
-
-            return "{$overrideUrl}{$separator}{$query}";
-        }
-
-        $configUrl = config("payment-gateway.routes.redirect_urls.{$type}");
-        if (filled($configUrl)) {
-            if (filter_var($configUrl, FILTER_VALIDATE_URL)) {
-                $separator = str_contains((string) $configUrl, '?') ? '&' : '?';
-
-                return "{$configUrl}{$separator}{$query}";
-            }
-            if (Route::has((string) $configUrl)) {
-                return route((string) $configUrl, $params);
-            }
-        }
-
-        $routeName = config("payment-gateway.routes.names.{$type}", "payment.{$type}");
-        if (Route::has($routeName)) {
-            return route($routeName, $params);
-        }
-
-        return url("/payment/{$type}?{$query}");
-    }
-
     private function resolveWebhookUrl(): string
     {
         $configUrl = config('payment-gateway.routes.redirect_urls.webhook');

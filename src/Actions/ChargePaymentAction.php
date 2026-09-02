@@ -214,10 +214,16 @@ class ChargePaymentAction
             return $result;
         }
 
+        // "No redirect URL" used to be read as "paid", which is not the same
+        // thing at all: a gateway that accepts a charge and hands back a handle
+        // has taken no money yet. That marked unpaid payments succeeded, stamped
+        // paid_at on them, and — through the checkout screen's matching
+        // assumption — showed the buyer a success page for a card they had never
+        // entered. The gateway now says outright whether it settled.
         $payment->update([
             'gateway_reference' => $result->orderReference,
-            'status' => $result->redirectUrl !== null ? PaymentStatus::Pending : PaymentStatus::Succeeded,
-            'paid_at' => $result->redirectUrl === null ? now() : null,
+            'status' => $result->settled ? PaymentStatus::Succeeded : PaymentStatus::Pending,
+            'paid_at' => $result->settled ? now() : null,
         ]);
 
         // The buyer is about to leave for the gateway's own page. If they never

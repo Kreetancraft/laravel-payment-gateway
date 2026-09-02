@@ -99,8 +99,11 @@ it('returns correct gateway label and icon', function (): void {
 it('checks checkout redirect correctly', function (): void {
     $manager = app(PaymentGatewayManager::class);
 
+    // Stripe hosts its own checkout page now, so it redirects like the bank
+    // does. It used to return false, which put the buyer on the success page
+    // as soon as a PaymentIntent existed — before any card had been entered.
     $stripe = $manager->createDriver('stripe');
-    expect($stripe->checkoutRedirect())->toBeFalse();
+    expect($stripe->checkoutRedirect())->toBeTrue();
 
     // Enable himalayan in DB to test driver creation
     Gateway::where('code', 'himalayan')->update(['enabled' => true]);

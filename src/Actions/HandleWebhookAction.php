@@ -61,7 +61,7 @@ class HandleWebhookAction
             $headers = $request->headers->all();
         }
 
-        if (! $this->verifySignature($gateway, $payload, $headers)) {
+        if (! $this->verifySignature($gateway, $payload, $headers, $request)) {
             return WebhookResult::failure(
                 eventType: 'unknown',
                 transactionId: (string) (data_get($payload, 'orderNo') ?? data_get($payload, 'order_no') ?? data_get($payload, 'id') ?? ''),
@@ -90,7 +90,7 @@ class HandleWebhookAction
      * @param  array<string, mixed>  $payload
      * @param  array<string, mixed>  $headers
      */
-    protected function verifySignature(string $gateway, array $payload, array $headers): bool
+    protected function verifySignature(string $gateway, array $payload, array $headers, ?Request $request = null): bool
     {
         $shouldVerify = (bool) config('payment-gateway.webhook.verify_signature', true);
 
@@ -98,8 +98,14 @@ class HandleWebhookAction
             return true;
         }
 
+        // `$request->headers->all()` hands back every value as a list, so a
+        // signature arrived here as ['t=...,v1=...'] and casting it to string
+        // produced the literal "Array" — which never verifies. Every Stripe
+        // webhook was rejected at this line.
         $normalizedHeaders = collect($headers)
-            ->mapWithKeys(fn (mixed $value, mixed $key): array => [strtolower((string) $key) => $value])
+            ->mapWithKeys(fn (mixed $value, mixed $key): array => [
+                strtolower((string) $key) => is_array($value) ? ($value[0] ?? null) : $value,
+            ])
             ->all();
 
         if ($gateway === 'stripe') {
@@ -130,8 +136,12 @@ class HandleWebhookAction
             }
 
             try {
-                // Use raw JSON from request when available to preserve Stripe signature; fall back to payload
-                $rawPayload = $payload['_raw'] ?? json_encode($payload, JSON_THROW_ON_ERROR);
+                // The HMAC covers the exact bytes Stripe sent. Re-encoding the
+                // decoded array is not those bytes — escaping and spacing differ
+                // — so this compared a signature against a payload Stripe never
+                // signed and failed for every real webhook.
+                $rawPayload = $request?->getContent()
+                    ?: ($payload['_raw'] ?? json_encode($payload, JSON_THROW_ON_ERROR));
                 Webhook::constructEvent($rawPayload, (string) $signature, $secret);
 
                 return true;
@@ -165,7 +175,11 @@ class HandleWebhookAction
             return false;
         }
 
-        $expected = hash_hmac('sha256', $payload['_raw'] ?? json_encode($payload, JSON_THROW_ON_ERROR), $secret);
+        $expected = hash_hmac(
+            'sha256',
+            $request?->getContent() ?: ($payload['_raw'] ?? json_encode($payload, JSON_THROW_ON_ERROR)),
+            $secret
+        );
 
         return hash_equals($expected, (string) $provided);
     }

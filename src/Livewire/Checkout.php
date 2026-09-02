@@ -566,13 +566,24 @@ class Checkout extends Component
                 return $this->redirect($result->redirectUrl, navigate: false);
             }
 
-            if (filled($result->orderReference)) {
+            // Only a gateway that actually took the money sends the buyer to
+            // the success page. Reaching here without that means the charge was
+            // accepted but nothing has been paid yet, and saying "success" would
+            // be a lie the buyer acts on.
+            if ($result->settled && filled($result->orderReference)) {
                 session()->flash('payment_success', $result->orderReference);
                 $successRoute = config('payment-gateway.routes.names.success', 'payment.success');
 
                 if (Route::has($successRoute)) {
                     return $this->redirect(route($successRoute, ['reference' => $result->orderReference]), navigate: true);
                 }
+            }
+
+            if (filled($result->orderReference)) {
+                $this->showError(
+                    'The payment was started but has not completed. It will be confirmed automatically '
+                    .'once the gateway reports back — do not pay again.'
+                );
             }
 
             return null;
