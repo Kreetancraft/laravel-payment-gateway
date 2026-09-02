@@ -160,23 +160,87 @@ php artisan user-management:sync-permissions
 **Gateways**, **Coupons**, and **Transactions** links automatically contribute themselves to the
 admin sidebar through container tags (`payment.navigation.items`).
 
+## What can be paid for
+
+A checkout names a thing, never a price. Implement `Payable` on whatever you
+sell and register it under an alias:
+
+```php
+// config/payment-gateway.php
+'payables' => [
+    'invoice' => \App\Models\Invoice::class,
+],
+```
+
+```php
+class Invoice extends Model implements Payable
+{
+    public function paymentAmountCents(): int { return $this->balance_due_cents; }
+    public function paymentCurrency(): string { return $this->currency; }
+    public function paymentReference(): string { return $this->number; }
+    public function paymentDescription(): ?string { return "Invoice {$this->number}"; }
+}
+```
+
+```
+POST /api/v1/payment/checkout   { "payable_type": "invoice", "payable_id": 42 }
+```
+
+The amount and currency are read off the model. An `amount_cents` in the request
+is ignored — earlier versions accepted it on a public route, which meant the
+buyer chose the price. An alias not in the allowlist is refused, so a caller
+cannot point checkout at an arbitrary model.
+
+Return what is still **outstanding**, not the original total: that is what gets
+charged, and a partly-paid payable must not be charged twice over.
+
 ## Public & Private API
 
-The package provides API routes for headless or mobile applications:
+```
+POST /api/v1/payment/checkout             Initiate a charge for a payable
+GET  /api/v1/payment/gateways             Enabled gateways and their currencies
+POST /api/v1/payment/coupons/validate     Validate a code the caller already holds
+POST /api/v1/payment/coupons/apply        Calculate a discount
+POST /api/v1/payment/webhook/{gateway}    Gateway callback
+```
+
+Behind `auth`:
 
 ```
-POST /api/v1/payment/checkout             Initiate charge (returns client_secret or redirect URL)
-POST /api/v1/payment/verify               Verify transaction status with gateway
-POST /api/v1/payment/refund               Process full or partial refund
-GET  /api/v1/payment/gateways             List all enabled gateways and supported currencies
-POST /api/v1/payment/webhook/{gateway}    Unified webhook handler with signature verification
-POST /api/v1/payment/coupons/validate     Validate coupon code against user and cart
-POST /api/v1/payment/coupons/apply        Calculate discount and return final amount
+POST /api/v1/payment/verify               Ask the gateway about a transaction
+GET  /api/v1/payment/coupons              Every active code and its value
 ```
+
+**There is no refund endpoint.** Refunding moves money out; it happens on the
+transactions screen, authorized against the payment. Everything above is rate
+limited — the webhook because each request costs an outbound call to the bank,
+the rest because they either probe for valid references or cost money.
+
+## Operations
+
+```bash
+php artisan payment-gateway:status
+```
+
+Names every missing credential and exits non-zero, so a deploy can gate on it.
+Worth running before go-live: every way a gateway is misconfigured looks the
+same from outside, and the buyer is the one who finds out.
+
+```bash
+php artisan payment-gateway:reconcile
+```
+
+Re-asks the gateway about payments still pending. Schedule it. A dropped
+callback otherwise means money taken and an order that never completes, with
+nothing that knows to look. Safe to run often — verification is idempotent and
+never downgrades a settled payment.
 
 ## Requirements
 
-PHP 8.2+, Laravel 12 or 13, Livewire 4, and Flux 2.
+PHP 8.2+ with `ext-openssl` and `ext-gmp`, Laravel 12 or 13, Livewire 4, Flux 2.
+
+`ext-gmp` is not optional in practice — the vendor's own integration notes call for it to
+avoid RSA timeouts on the JOSE handshake.
 
 ## License
 
