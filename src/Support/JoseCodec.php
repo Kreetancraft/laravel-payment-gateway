@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Kreetancraft\PaymentGateway\Support;
 
+use InvalidArgumentException;
 use Jose\Component\Checker\AlgorithmChecker;
 use Jose\Component\Checker\AudienceChecker;
 use Jose\Component\Checker\ClaimCheckerManager;
@@ -61,11 +62,8 @@ class JoseCodec
 
     private JWELoader $jweLoader;
 
-    private readonly string $encryptionKeyId;
-
-    public function __construct(?string $encryptionKeyId = null)
+    public function __construct()
     {
-        $this->encryptionKeyId = $encryptionKeyId ?? (string) HblConfig::get('encryption_key_id', '');
         $this->jwsCompactSerializer = new JWSCompactSerializer;
         $this->jwsBuilder = new JWSBuilder(new AlgorithmManager([new PS256]));
         $this->jwsLoader = new JWSLoader(
@@ -95,10 +93,27 @@ class JoseCodec
     /**
      * Sign then encrypt a JOSE payload for a PACO request.
      *
+     * $encryptionKeyId is PACO's key id and goes in the JWE protected header. It
+     * used to be read here from `payment-gateway.gateways.himalayan.encryption_key_id`,
+     * a config key that has never existed — the value is collected by the admin
+     * UI into the gateway's encrypted credentials, which this class cannot see.
+     * The codec is also container-autowired with no arguments, so the constructor
+     * default was always null and every outbound JWE went out with `kid: ""`.
+     * PACO requires it. Callers pass it now, from wherever they keep credentials.
+     *
      * @param  array<string, mixed>  $payload
+     *
+     * @throws InvalidArgumentException when the key id is missing
      */
-    public function encrypt(array $payload, JWK $signingKey, JWK $encryptingKey): string
+    public function encrypt(array $payload, JWK $signingKey, JWK $encryptingKey, string $encryptionKeyId): string
     {
+        if (trim($encryptionKeyId) === '') {
+            throw new InvalidArgumentException(
+                'The PACO encryption key id is not configured. Set it on the Himalayan gateway '
+                .'credentials; without it every request is signed with an empty `kid` and rejected.'
+            );
+        }
+
         $jws = $this->jwsBuilder
             ->create()
             ->withPayload(json_encode($payload, JSON_THROW_ON_ERROR))
@@ -114,7 +129,7 @@ class JoseCodec
             ->withSharedProtectedHeader([
                 'alg' => self::JWE_ALGORITHM,
                 'enc' => self::JWE_ENCRYPTION,
-                'kid' => $this->encryptionKeyId,
+                'kid' => $encryptionKeyId,
                 'typ' => self::TOKEN_TYPE,
             ])
             ->addRecipient($encryptingKey)

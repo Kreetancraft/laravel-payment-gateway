@@ -89,27 +89,99 @@ class HimalayanBankGateway extends AbstractGateway
         }
     }
 
+    /**
+     * Reverse a payment.
+     *
+     * Void before settlement, Refund after. PACO will not void a settled
+     * transaction, so choosing by the transaction's own state is the difference
+     * between a refund happening and a refund being reported as happening.
+     *
+     * Three things were wrong here and each one reported success regardless:
+     * the response was never inspected, so a PACO-level rejection returned
+     * success; `issuerApprovalCode` was hardcoded `'000000'` where the demo notes
+     * it must be the approval code from the original payment; and the currency
+     * came from a `currency` credential that does not exist, so every reversal
+     * was denominated NPR whatever the payment was in.
+     */
     public function refund(string $transactionId, float $amount): RefundResult
     {
         try {
-            $this->client->void([
+            $tx = data_get($this->client->transactionList(['orderNo' => [$transactionId]]), 'response.Data.0');
+
+            if (! $tx) {
+                return RefundResult::failure($transactionId, $amount, 'No transaction record on the gateway to reverse.');
+            }
+
+            $currency = $this->resolveCurrency((string) data_get($tx, 'currencyCode'));
+            $approvalCode = (string) (data_get($tx, 'approvalCode') ?? data_get($tx, 'PaymentStatusInfo.ApprovalCode') ?? '');
+
+            $amountBlock = [
+                'amountText' => str_pad((string) (int) round($amount * 100), 12, '0', STR_PAD_LEFT),
+                'currencyCode' => $currency,
+                'decimalPlaces' => 2,
+                'amount' => $amount,
+            ];
+
+            $common = [
                 'officeId' => $this->gateway->getHimalayanOfficeId(),
                 'orderNo' => $transactionId,
                 'productDescription' => "Refund {$transactionId}",
-                'issuerApprovalCode' => '000000',
                 'actionBy' => 'System',
-                'voidAmount' => [
-                    'amountText' => str_pad((string) (int) round($amount * 100), 12, '0', STR_PAD_LEFT),
-                    'currencyCode' => $this->gateway->getConfigValue('currency', 'NPR'),
-                    'decimalPlaces' => 2,
-                    'amount' => $amount,
-                ],
-            ]);
+            ];
+
+            if ($this->isSettled($tx)) {
+                $response = $this->client->refund($common + [
+                    'issuerApprovalCode' => $approvalCode,
+                    'refundAmount' => $amountBlock,
+                ]);
+            } else {
+                $response = $this->client->void($common + [
+                    'issuerApprovalCode' => $approvalCode,
+                    'voidAmount' => $amountBlock,
+                ]);
+            }
+
+            $responseCode = (string) (data_get($response, 'response.ResponseCode') ?? data_get($response, 'response.responseCode') ?? '');
+            $message = (string) (
+                data_get($response, 'response.ErrorDetails.Message')
+                ?? data_get($response, 'response.ResponseMessage')
+                ?? data_get($response, 'response.message')
+                ?? ''
+            );
+
+            // PACO signals success with 0000. Anything else, including a 200 with
+            // an error envelope, is a refusal.
+            if ($responseCode !== '' && $responseCode !== '0000') {
+                return RefundResult::failure(
+                    $transactionId,
+                    $amount,
+                    $message !== '' ? $message : "Gateway refused the reversal (code {$responseCode})."
+                );
+            }
 
             return RefundResult::success($transactionId, $amount);
         } catch (Throwable $e) {
             return RefundResult::failure($transactionId, $amount, $e->getMessage());
         }
+    }
+
+    /**
+     * Whether PACO has settled this transaction, which decides Void vs Refund.
+     *
+     * `A` is authorised and not yet settled; `S` is settled.
+     *
+     * @param  array<string, mixed>|object  $tx
+     */
+    private function isSettled(mixed $tx): bool
+    {
+        $status = strtoupper(trim((string) (
+            data_get($tx, 'PaymentStatusInfo.PaymentStatus')
+            ?? data_get($tx, 'paymentStatus')
+            ?? data_get($tx, 'transactionStatus')
+            ?? ''
+        )));
+
+        return in_array($status, ['S', 'SETTLED'], true);
     }
 
     public function verify(array $data): VerificationResult
@@ -132,16 +204,45 @@ class HimalayanBankGateway extends AbstractGateway
             $tx = data_get($res, 'response.Data.0');
 
             if (! $tx) {
-                return VerificationResult::failure($orderNo, 'No transaction records found for this order on gateway.');
+                // PACO has no record yet. On a fast return from the payment page
+                // that is normal, not a failure.
+                return VerificationResult::undetermined($orderNo, 'No transaction record on the gateway yet.', reference: $orderNo);
             }
 
-            $rawStatus = strtoupper((string) data_get($tx, 'transactionStatus', 'PENDING'));
+            // PaymentStatusInfo.PaymentStatus first, then the older field names.
+            // PACO puts the authoritative value in the nested object; reading only
+            // `transactionStatus` misses it on current responses.
+            $rawStatus = strtoupper(trim((string) (
+                data_get($tx, 'PaymentStatusInfo.PaymentStatus')
+                ?? data_get($tx, 'paymentStatus')
+                ?? data_get($tx, 'transactionStatus')
+                ?? data_get($tx, 'status')
+                ?? ''
+            )));
             $amount = (float) data_get($tx, 'amount', 0);
             $currency = $this->resolveCurrency($data['currency'] ?? (string) data_get($tx, 'currencyCode'));
             $paidAt = (string) data_get($tx, 'transactionDateTime', now()->toIso8601String());
 
-            // Check if status represents a successful charge
-            $isSuccessful = in_array($rawStatus, ['0000', 'COMPLETED', 'SETTLED', 'SUCCESS', 'APPROVED', 'PAID'], true);
+            // PACO answers in single letters: A is authorised pre-settlement, S is
+            // settled. Neither was in the list this shipped with — which was guessed,
+            // since the vendor demo parses no statuses at all — so every genuinely
+            // paid transaction read as not-successful. These lists come from the
+            // monolith, whose tests assert them against captured PACO payloads.
+            $paidStatuses = array_map(
+                'strtoupper',
+                (array) config('payment-gateway.gateways.himalayan.paid_statuses', [
+                    'A', 'S', 'Settled', 'Success', 'Successful', 'Completed', 'Paid', 'Approved', '0000',
+                ])
+            );
+
+            $failedStatuses = array_map(
+                'strtoupper',
+                (array) config('payment-gateway.gateways.himalayan.failed_statuses', [
+                    'F', 'V', 'C', 'Failed', 'Voided', 'Cancelled', 'Canceled', 'Declined', 'Rejected', 'Expired',
+                ])
+            );
+
+            $isSuccessful = in_array($rawStatus, $paidStatuses, true);
 
             if ($isSuccessful) {
                 return VerificationResult::success(
@@ -154,7 +255,19 @@ class HimalayanBankGateway extends AbstractGateway
                 );
             }
 
-            $isCancelled = in_array($rawStatus, ['CANCELLED', 'CANCELED', 'USER_CANCELLED'], true);
+            // Anything in neither list is still in flight — 3DS in progress, or an
+            // authorisation the bank has not settled. Reporting that as failed is
+            // what made the buyer's return from the payment page, the moment a
+            // pending state is most likely, write the payment off.
+            if (! in_array($rawStatus, $failedStatuses, true)) {
+                return VerificationResult::undetermined(
+                    $orderNo,
+                    "Transaction not settled yet (gateway status: {$rawStatus}).",
+                    reference: $orderNo,
+                );
+            }
+
+            $isCancelled = in_array($rawStatus, ['C', 'CANCELLED', 'CANCELED', 'USER_CANCELLED'], true);
             $statusNormalized = $isCancelled ? 'cancelled' : 'failed';
 
             return new VerificationResult(
@@ -167,7 +280,8 @@ class HimalayanBankGateway extends AbstractGateway
                 reference: $orderNo,
             );
         } catch (Throwable $e) {
-            return VerificationResult::failure($orderNo, $e->getMessage(), reference: $orderNo);
+            // Could not ask the bank. Not the same as the bank saying no.
+            return VerificationResult::undetermined($orderNo, $e->getMessage(), reference: $orderNo);
         }
     }
 

@@ -3,6 +3,7 @@
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Route;
 use Kreetancraft\PaymentGateway\Actions\RefundPaymentAction;
+use Kreetancraft\PaymentGateway\Data\RefundResult;
 use Kreetancraft\PaymentGateway\Models\Payment;
 
 uses(RefreshDatabase::class);
@@ -25,7 +26,7 @@ function routeNames(): array
         ->all();
 }
 
-function routeFor(string $name): ?\Illuminate\Routing\Route
+function routeFor(string $name): ?Illuminate\Routing\Route
 {
     return collect(Route::getRoutes()->getRoutes())
         ->first(fn ($route): bool => $route->getName() === $name);
@@ -90,7 +91,7 @@ it('refunds a payment from the transactions screen', function (): void {
 
     // It reaches the gateway rather than dying on its own signature; whether
     // the mock gateway settles is another test's business.
-    expect($result)->toBeInstanceOf(\Kreetancraft\PaymentGateway\Data\RefundResult::class)
+    expect($result)->toBeInstanceOf(RefundResult::class)
         ->and($result->errorCode)->not->toBe('transaction_missing')
         ->and($result->errorCode)->not->toBe('invalid_amount');
 });

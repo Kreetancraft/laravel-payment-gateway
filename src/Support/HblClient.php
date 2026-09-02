@@ -80,6 +80,18 @@ class HblClient
         return $this->send('api/1.0/Void', $request);
     }
 
+    /**
+     * Post-settlement reversal. Void only works before settlement, so without
+     * this a settled transaction could not be refunded at all.
+     *
+     * @param  array<string, mixed>  $request
+     * @return array<string, mixed>
+     */
+    public function refund(array $request): array
+    {
+        return $this->send('api/1.0/Refund/refund', $request);
+    }
+
     private function getOfficeId(): string
     {
         if (app()->bound(GatewayResolver::class)) {
@@ -108,6 +120,29 @@ class HblClient
         }
 
         return (string) HblConfig::get('api_key', '');
+    }
+
+    /**
+     * PACO's key id for the JWE protected header.
+     *
+     * Same resolution order as every other credential: the gateway row first,
+     * then config. Deliberately no default — an empty kid is rejected by PACO,
+     * and failing here names the missing setting instead.
+     */
+    private function getEncryptionKeyId(): string
+    {
+        if (app()->bound(GatewayResolver::class)) {
+            try {
+                $gateway = app(GatewayResolver::class)->getGatewayConfigModel('himalayan');
+
+                if ($gateway && filled($gateway->getHimalayanEncryptionKeyId())) {
+                    return (string) $gateway->getHimalayanEncryptionKeyId();
+                }
+            } catch (Throwable) {
+            }
+        }
+
+        return (string) HblConfig::get('encryption_key_id', '');
     }
 
     /**
@@ -143,7 +178,7 @@ class HblClient
             'exp' => $now->copy()->addHour()->timestamp,
         ];
 
-        $body = $this->codec->encrypt($payload, $this->signingKey(), $this->pacoEncryptionKey());
+        $body = $this->codec->encrypt($payload, $this->signingKey(), $this->pacoEncryptionKey(), $this->getEncryptionKeyId());
 
         $baseUrl = $this->getBaseUrl();
 

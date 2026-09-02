@@ -71,10 +71,18 @@ class VerifyPaymentAction
     {
         $statusStr = strtolower($result->status);
 
+        // `pending` means undetermined — the gateway could not be reached, or has
+        // not settled yet. It must leave the record alone. The old third arm was
+        // `! $result->success => Failed`, so any transport error permanently wrote
+        // off a payment that may well have been captured.
+        if ($statusStr === 'pending') {
+            return;
+        }
+
         $payment->status = match (true) {
             $result->success && in_array($statusStr, ['completed', 'settled', 'success', 'approved', 'succeeded', 'paid', '0000'], true) => PaymentStatus::Succeeded,
-            in_array($statusStr, ['cancelled', 'canceled'], true) => PaymentStatus::Cancelled,
-            ! $result->success || in_array($statusStr, ['failed', 'declined', 'rejected', 'error'], true) => PaymentStatus::Failed,
+            in_array($statusStr, ['cancelled', 'canceled'], true) => PaymentStatus::Canceled,
+            in_array($statusStr, ['failed', 'declined', 'rejected', 'error'], true) => PaymentStatus::Failed,
             default => $payment->status,
         };
 
