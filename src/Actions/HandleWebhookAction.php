@@ -74,8 +74,10 @@ class HandleWebhookAction
         $result = $gatewayInstance->webhook($request);
 
         if (! $result->success) {
+            // The reference, not the body: a webhook payload carries customer
+            // and order detail that has no business sitting in plaintext logs.
             Log::warning("Webhook handling failed for gateway [{$gateway}]: {$result->errorMessage}", [
-                'payload' => $payload,
+                'transaction_id' => $result->transactionId,
             ]);
 
             return $result;

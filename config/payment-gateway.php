@@ -170,6 +170,11 @@ return [
         'register_api' => env('PAYMENT_GATEWAY_REGISTER_API', true),
         'prefix' => env('PAYMENT_GATEWAY_ROUTE_PREFIX', 'payment'),
         'middleware' => ['web'],
+
+        // Endpoints that read payment data back or hand out discount codes.
+        // Staff work, not buyer work. Point this at whatever guard your API
+        // uses — 'auth:sanctum' for a token API, 'auth' for a session one.
+        'protected_middleware' => ['auth'],
         'api_prefix' => env('PAYMENT_GATEWAY_API_PREFIX', 'api/v1/payment'),
         'api_middleware' => ['api'],
         'names' => [

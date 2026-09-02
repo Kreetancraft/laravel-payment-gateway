@@ -18,8 +18,35 @@ class RefundPaymentAction
         protected GatewayResolver $resolver,
     ) {}
 
-    public function handle(string $transactionId, float $amount): RefundResult
+    /**
+     * Refund a Payment, defaulting to whatever is still outstanding on it.
+     *
+     * The transactions screen is the only authorized way to refund in this
+     * package, and it was calling `run($payment)` — a model into a
+     * `string $transactionId` parameter, with no amount — so it threw an
+     * ArgumentCountError every time somebody pressed the button. Meanwhile an
+     * unauthenticated API route called the same action correctly. This gives
+     * the screen an entry point shaped the way it actually calls.
+     */
+    public static function forPayment(Payment $payment, ?float $amount = null): RefundResult
     {
+        return static::run(
+            transactionId: (string) $payment->gateway_reference,
+            amount: $amount ?? ($payment->amount_cents - $payment->refunded_amount_cents) / 100,
+        );
+    }
+
+    /**
+     * Refund a payment by its gateway reference.
+     *
+     * The parameter name is part of the API — callers use named arguments — so
+     * it stays. `$amount` is now optional and refunds nothing by default rather
+     * than being required; pass it, or use forPayment() below.
+     */
+    public function handle(string $transactionId, ?float $amount = null): RefundResult
+    {
+        $amount ??= 0.0;
+
         if (blank($transactionId)) {
             return RefundResult::failure(
                 transactionId: $transactionId,

@@ -26,21 +26,18 @@ class PaymentController extends Controller
             if ($isCancelled) {
                 return view('payment-gateway::cancel', [
                     'result' => $result,
-                    'payload' => $request->all(),
-                ]);
+                                    ]);
             }
 
             return view('payment-gateway::failed', [
                 'result' => $result,
-                'payload' => $request->all(),
-                'errorMessage' => $result->errorMessage ?? 'Payment could not be verified by the gateway.',
+                                'errorMessage' => $result->errorMessage ?? 'Payment could not be verified by the gateway.',
             ]);
         }
 
         return view('payment-gateway::success', [
             'result' => $result,
-            'payload' => $request->all(),
-        ]);
+                    ]);
     }
 
     public function cancel(Request $request): View
@@ -54,8 +51,7 @@ class PaymentController extends Controller
         }
 
         return view('payment-gateway::cancel', [
-            'payload' => $request->all(),
-        ]);
+                    ]);
     }
 
     public function failed(Request $request): View
@@ -69,8 +65,7 @@ class PaymentController extends Controller
         }
 
         return view('payment-gateway::failed', [
-            'payload' => $request->all(),
-            'errorMessage' => $request->query('message', 'The transaction could not be completed by the payment provider.'),
+                        'errorMessage' => $request->query('message', 'The transaction could not be completed by the payment provider.'),
         ]);
     }
 
@@ -78,16 +73,14 @@ class PaymentController extends Controller
     {
         return view('payment-gateway::choose', [
             'gateways' => config('payment-gateway.gateways', []),
-            'payload' => $request->all(),
-        ]);
+                    ]);
     }
 
     public function checkout(Request $request, ?string $gateway = null): View
     {
         return view('payment-gateway::checkout', [
             'gateway' => $gateway,
-            'payload' => $request->all(),
-        ]);
+                    ]);
     }
 
     public function verify(Request $request): JsonResponse

@@ -60,10 +60,17 @@ if (config('payment-gateway.routes.register_ui', true)) {
 
 // Public Coupon API endpoints (if needed over web session)
 Route::prefix('api-coupons')->name('coupons.')->group(function (): void {
-    Route::get('/', [CouponController::class, 'listCoupons'])
+    // A code the caller already holds; redeeming is buyer work.
+    Route::middleware('throttle:20,1')->group(function (): void {
+        Route::post('validate', [CouponController::class, 'validateCoupon'])
+            ->name('validate');
+        Route::post('apply', [CouponController::class, 'applyCoupon'])
+            ->name('apply');
+    });
+
+    // The full list of active codes and their values is staff work. Served
+    // over the web session as well as the API, so it needs gating in both.
+    Route::middleware(config('payment-gateway.routes.protected_middleware', ['auth']))
+        ->get('/', [CouponController::class, 'listCoupons'])
         ->name('list');
-    Route::post('validate', [CouponController::class, 'validateCoupon'])
-        ->name('validate');
-    Route::post('apply', [CouponController::class, 'applyCoupon'])
-        ->name('apply');
 });

@@ -62,7 +62,7 @@ class ManageTransactions extends Component
         $payment = Payment::findOrFail($paymentId);
         $this->authorize('refund', $payment);
 
-        $result = RefundPaymentAction::run($payment);
+        $result = RefundPaymentAction::forPayment($payment);
 
         if ($result->successful()) {
             if (class_exists(Flux::class) && app()->bound('flux')) {
