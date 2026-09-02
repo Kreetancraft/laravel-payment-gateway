@@ -13,6 +13,8 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
 use Kreetancraft\PaymentGateway\Database\Factories\PaymentFactory;
 use Kreetancraft\PaymentGateway\Enums\PaymentStatus;
+use Kreetancraft\PaymentGateway\Events\PaymentFailed;
+use Kreetancraft\PaymentGateway\Events\PaymentSucceeded;
 
 /**
  * @property int $id
@@ -117,6 +119,37 @@ class Payment extends Model
                 $rand = Str::random(16);
                 $payment->idempotency_key = hash('sha256', "{$payment->gateway}:{$payment->amount_cents}:{$payment->currency}:{$rand}");
             }
+        });
+
+        // The seam for everything that happens because money arrived, or did
+        // not. Fired here rather than from the webhook handler because four
+        // different paths settle a payment — the webhook, a manual verify, the
+        // reconcile sweep and the re-verify job — and all of them write the
+        // status through the model.
+        //
+        // `wasChanged` is what makes it safe to generate an invoice from: it is
+        // true only when the status actually moved, so the same webhook
+        // arriving twice, or a sweep re-checking a settled payment, does not
+        // fire it again.
+        static::saved(function (Payment $payment): void {
+            if (! $payment->wasChanged('status')) {
+                return;
+            }
+
+            // `wasChanged` is not quite enough on its own. Re-saving the same
+            // instance with the status it already holds still counts as a
+            // change once the attribute has been touched, so compare the value
+            // this save started from. Inside `saved` the original has not been
+            // synced yet, so it is the previous status.
+            if ($payment->getOriginal('status') === $payment->status) {
+                return;
+            }
+
+            match ($payment->status) {
+                PaymentStatus::Succeeded => PaymentSucceeded::dispatch($payment),
+                PaymentStatus::Failed, PaymentStatus::Canceled => PaymentFailed::dispatch($payment),
+                default => null,
+            };
         });
     }
 
