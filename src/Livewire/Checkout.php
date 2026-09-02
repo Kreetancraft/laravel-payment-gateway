@@ -7,6 +7,8 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\Route;
 use Kreetancraft\PaymentGateway\Actions\ChargePaymentAction;
 use Kreetancraft\PaymentGateway\Contracts\GatewayResolver;
+use Kreetancraft\PaymentGateway\Contracts\Payable;
+use Kreetancraft\PaymentGateway\Layout;
 use Kreetancraft\PaymentGateway\Models\Coupon;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Url;
@@ -21,6 +23,23 @@ class Checkout extends Component
     #[Url]
     public ?string $gateway = null;
 
+    /**
+     * What is being paid for. The alias must appear in `payment-gateway.payables`.
+     *
+     * This screen used to take an amount — from the query string, and from a
+     * field the buyer could type into. That is the buyer choosing the price. The
+     * amount comes off the payable now, exactly as it does on the API path.
+     */
+    #[Url]
+    public ?string $payableType = null;
+
+    #[Url]
+    public int|string|null $payableId = null;
+
+    /**
+     * Kept so an old link carrying ?amount= still loads rather than erroring.
+     * It is displayed nowhere and charged never.
+     */
     #[Url]
     public int|float|string|null $amount = null;
 
@@ -70,6 +89,8 @@ class Checkout extends Component
      */
     public function mount(
         ?string $gateway = null,
+        ?string $payableType = null,
+        int|string|null $payableId = null,
         int|float|string|null $amount = null,
         ?string $currency = null,
         ?string $customerName = null,
@@ -84,6 +105,9 @@ class Checkout extends Component
     ): void {
         // Guard against Livewire passing null to typed string property
         $orderTitle = $orderTitle ?? '';
+
+        $this->payableType = $payableType ?? request()->query('payableType', $this->payableType);
+        $this->payableId = $payableId ?? request()->query('payableId', $this->payableId);
 
         $this->loadInitialValues(
             gateway: $gateway,
@@ -370,19 +394,61 @@ class Checkout extends Component
         }
     }
 
-    public function getAmountInCents(): int
-    {
-        $clean = trim($this->amountInput);
+    /**
+     * The payable being paid for, or null when the link did not name one.
+     *
+     * Protected so Livewire leaves it alone between requests; it is re-resolved
+     * per request, which is one indexed lookup.
+     */
+    protected ?Payable $resolvedPayable = null;
 
-        if (! is_numeric($clean)) {
-            return 0;
+    public function payable(): ?Payable
+    {
+        if ($this->resolvedPayable !== null) {
+            return $this->resolvedPayable;
         }
 
-        return (int) round((float) $clean * 100);
+        if (blank($this->payableType) || blank($this->payableId)) {
+            return null;
+        }
+
+        $class = config('payment-gateway.payables.'.$this->payableType);
+
+        if (! is_string($class) || ! class_exists($class) || ! is_subclass_of($class, Payable::class)) {
+            return null;
+        }
+
+        $model = $class::query()->find($this->payableId);
+
+        return $this->resolvedPayable = $model instanceof Payable ? $model : null;
     }
 
+    /**
+     * What is owed, before any discount.
+     *
+     * Everything on this screen — the step guards, the coupon check, the
+     * displayed total — goes through here, so changing this one method moves the
+     * whole component off the typed-in amount.
+     */
+    public function getAmountInCents(): int
+    {
+        return $this->payable()?->paymentAmountCents() ?? 0;
+    }
+
+    /**
+     * The payable's currency, never the request's.
+     *
+     * Letting the buyer pick this is how a USD invoice gets settled in a
+     * currency worth a fraction as much — the monolith still has that bug.
+     */
     public function getCurrencyCode(): string
     {
+        $payable = $this->payable();
+
+        if ($payable !== null) {
+            return strtoupper($payable->paymentCurrency());
+        }
+
         return strtoupper(trim($this->currencyInput ?: 'USD'));
     }
 
@@ -464,9 +530,13 @@ class Checkout extends Component
             return null;
         }
 
+        // No amount and no currency: the action reads both off the payable, and
+        // applies the coupon itself so the discount is computed server-side from
+        // the Coupon row rather than trusted from this screen.
         $payload = [
-            'amount_cents' => $amountCents,
-            'currency' => $this->getCurrencyCode(),
+            'payable_type' => $this->payableType,
+            'payable_id' => $this->payableId,
+            'coupon' => $this->appliedCouponCode,
             'gateway' => $this->selectedGateway,
             'customer_email' => $this->customerEmail,
             'customer_name' => $this->customerName ?: null,
@@ -476,7 +546,6 @@ class Checkout extends Component
             'metadata' => array_merge($this->metadata, [
                 'order_title' => $this->orderTitle,
                 'original_amount_cents' => $this->getAmountInCents(),
-                'discount_cents' => $this->appliedDiscountCents,
                 'applied_coupon' => $this->appliedCouponCode,
                 'has_free_shipping' => $this->hasFreeShipping,
             ]),
@@ -532,6 +601,6 @@ class Checkout extends Component
             'formattedAmount' => $this->formattedAmount,
             'formattedDiscount' => $this->formattedDiscount,
             'enabledGateways' => $this->enabledGateways,
-        ]);
+        ])->layout(Layout::checkout());
     }
 }

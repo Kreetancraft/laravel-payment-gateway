@@ -81,7 +81,7 @@
             <flux:card>
                 <x-payment-gateway::empty-state
                     icon="ticket"
-                    :title="__('No redemptions yet')"
+                    :heading="__('No redemptions yet')"
                     :description="__('Redemptions will appear here once customers apply this coupon during checkout.')"
                 />
             </flux:card>
@@ -96,7 +96,7 @@
 
                 <flux:table.rows>
                     @foreach ($redemptions as $redemption)
-                        <flux:table.row wire:key="usage-{{ $redemption->id }}">
+                        <flux:table.row :wire:key="'usage-'.$redemption->id">
                             <flux:table.cell>
                                 <span class="font-medium text-sm">{{ $redemption->user_id ? 'User #' . $redemption->user_id : __('Guest') }}</span>
                             </flux:table.cell>

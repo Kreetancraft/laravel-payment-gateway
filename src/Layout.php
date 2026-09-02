@@ -37,6 +37,23 @@ class Layout
     /**
      * Where the "Dashboard" breadcrumb points.
      */
+    /**
+     * Where the buyer-facing checkout renders.
+     *
+     * Separate from admin() because a payment page should not be wrapped in your
+     * admin chrome — a buyer is not signed in and should not see a sidebar of
+     * staff links. Falls back to the same conventions, so it works with no
+     * configuration at all.
+     */
+    public static function checkout(): string
+    {
+        return self::resolve(
+            config('payment-gateway.layouts.checkout') ?? config('payment-gateway.layouts.admin'),
+            'payment-gateway.layouts.checkout',
+            self::CONVENTIONS,
+        );
+    }
+
     public static function home(): string
     {
         $home = (string) config('payment-gateway.routes.home', 'dashboard');

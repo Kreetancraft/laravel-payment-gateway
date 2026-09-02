@@ -169,3 +169,38 @@ it('rejects a tampered token', function (): void {
 
     expect(fn () => $codec->decrypt(implode('.', $parts), $key, $key, 'api-key'))->toThrow(Exception::class);
 });
+
+it('rejects a response that simply omits the audience', function (): void {
+    // The library skips a checker when its claim is absent, so a response with
+    // no `aud` at all used to sail past the audience check. Passing the
+    // mandatory-claim list closes that. The vendor demo still has this hole.
+    $codec = new JoseCodec;
+    $key = rsaKey();
+
+    $token = $codec->encrypt([
+        'request' => [],
+        'iss' => 'PacoIssuer',
+        // no aud
+        'iat' => now()->timestamp,
+        'nbf' => now()->timestamp,
+        'exp' => now()->addHour()->timestamp,
+    ], $key, $key, 'kid-1');
+
+    expect(fn () => $codec->decrypt($token, $key, $key, 'api-key'))->toThrow(Exception::class);
+});
+
+it('rejects a response with no expiry', function (): void {
+    $codec = new JoseCodec;
+    $key = rsaKey();
+
+    $token = $codec->encrypt([
+        'request' => [],
+        'iss' => 'PacoIssuer',
+        'aud' => 'api-key',
+        'iat' => now()->timestamp,
+        'nbf' => now()->timestamp,
+        // no exp — a token that never expires
+    ], $key, $key, 'kid-1');
+
+    expect(fn () => $codec->decrypt($token, $key, $key, 'api-key'))->toThrow(Exception::class);
+});

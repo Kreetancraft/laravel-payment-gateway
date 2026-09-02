@@ -17,21 +17,6 @@ return [
 
     /*
     |--------------------------------------------------------------------------
-    | Database Encryption Secret Key
-    |--------------------------------------------------------------------------
-    |
-    | Dedicated key used to encrypt all gateway credentials and private keys
-    | in the database. If your database is compromised, all sensitive tokens
-    | remain protected without this secret. Falls back to APP_KEY if empty.
-    |
-    */
-    'encryption' => [
-        'key' => env('PAYMENT_GATEWAY_ENCRYPTION_KEY', env('PAYMENT_GATEWAY_SECRET', null)),
-        'cipher' => env('PAYMENT_GATEWAY_CIPHER', 'AES-256-CBC'),
-    ],
-
-    /*
-    |--------------------------------------------------------------------------
     | Payment Gateways Definition
     |--------------------------------------------------------------------------
     |
@@ -95,21 +80,21 @@ return [
                     'label' => 'Office ID',
                     'type' => 'text',
                     'required' => true,
-                    'description' => 'Office ID provided by Himalayan Bank (e.g., 9104137120)',
+                    'description' => 'Office ID provided by Himalayan Bank (e.g., **************)',
                 ],
                 'api_key' => [
                     'key' => 'api_key',
                     'label' => 'API Key',
                     'type' => 'password',
                     'required' => true,
-                    'description' => 'API Key provided by Himalayan Bank',
+                    'description' => 'API Key provided by Himalayan Bank (e.g., **************)',
                 ],
                 'encryption_key_id' => [
                     'key' => 'encryption_key_id',
                     'label' => 'Encryption Key ID',
                     'type' => 'text',
                     'required' => true,
-                    'description' => 'Encryption Key ID provided by Himalayan Bank',
+                    'description' => 'Encryption Key ID provided by Himalayan Bank (e.g., **************)',
                 ],
                 'merchant_signing_key' => [
                     'key' => 'merchant_signing_key',
@@ -186,6 +171,22 @@ return [
     |
     */
     'payables' => [],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Layouts
+    |--------------------------------------------------------------------------
+    |
+    | This package ships no layout; its screens render into yours. Leave these
+    | null and it tries the usual conventions — components.layouts.app first.
+    | Give checkout its own if you do not want admin chrome around a payment
+    | page a buyer sees.
+    |
+    */
+    'layouts' => [
+        'admin' => null,
+        'checkout' => null,
+    ],
 
     'routes' => [
         'register' => env('PAYMENT_GATEWAY_REGISTER_ROUTES', true),

@@ -60,7 +60,7 @@
                                 @php($fLabel = is_array($field) ? ($field['label'] ?? $fKey) : $fKey)
                                 @php($fDesc = is_array($field) ? ($field['description'] ?? '') : '')
 
-                                <flux:field wire:key="field-{{ $fKey }}">
+                                <flux:field :wire:key="'field-'.$fKey">
                                     <flux:label>{{ $fLabel }}</flux:label>
 
                                     @if ($fType === 'textarea')

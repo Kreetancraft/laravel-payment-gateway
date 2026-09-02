@@ -43,6 +43,13 @@ abstract class TestCase extends BaseTestCase
         $app['config']->set('payment-gateway.gateways.himalayan.enabled', false);
         $app['config']->set('payment-gateway.gateways.himalayan.office_id', null);
         $app['config']->set('app.key', 'base64:'.base64_encode(random_bytes(32)));
+
+        // Pinned, so the suite does not inherit whatever testbench.yaml sets for
+        // the workbench. Laravel's default store is the database, and there is no
+        // cache table here — the gateway resolver caches its enabled list, so
+        // that surfaces as "no such table: cache" from unrelated tests.
+        $app['config']->set('cache.default', 'array');
+        $app['config']->set('queue.default', 'sync');
         $app['config']->set('payment-gateway.routes.home', '/');
 
         // The only payable the suite knows about. Checkout refuses anything not

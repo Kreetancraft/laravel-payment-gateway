@@ -160,7 +160,11 @@ class JoseCodec
             new AudienceChecker($expectedAudience),
             new IssuerChecker(['PacoIssuer']),
         ]);
-        $claimCheckerManager->check($claims);
+        // The second argument is the list of claims that MUST be present.
+        // Without it the library simply skips a checker whose claim is absent, so
+        // a response carrying no `aud` sailed past the audience check. The vendor
+        // demo has the same hole.
+        $claimCheckerManager->check($claims, ['iss', 'aud', 'exp']);
 
         return $claims;
     }

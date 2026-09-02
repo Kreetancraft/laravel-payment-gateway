@@ -8,6 +8,8 @@ use Kreetancraft\PaymentGateway\Contracts\GatewayResolver;
 use Kreetancraft\PaymentGateway\Contracts\Payable;
 use Kreetancraft\PaymentGateway\Data\PaymentResult;
 use Kreetancraft\PaymentGateway\Enums\PaymentStatus;
+use Kreetancraft\PaymentGateway\Jobs\ReverifyPaymentJob;
+use Kreetancraft\PaymentGateway\Models\Coupon;
 use Kreetancraft\PaymentGateway\Models\Payment;
 use Lorisleiva\Actions\Concerns\AsAction;
 
@@ -31,6 +33,9 @@ class ChargePaymentAction
             // working; it just cannot choose the price any more.
             'payable_type' => ['required', 'string'],
             'payable_id' => ['required'],
+            // A code, not a discount. The reduction is computed here from the
+            // Coupon row, so the caller cannot choose how much to take off.
+            'coupon' => ['sometimes', 'nullable', 'string', 'max:64'],
             'gateway' => ['sometimes', 'string'],
             'customer_email' => ['sometimes', 'nullable', 'email'],
             'customer_name' => ['sometimes', 'nullable', 'string', 'max:255'],
@@ -68,6 +73,35 @@ class ChargePaymentAction
             );
         }
 
+        $currency = strtoupper($payable->paymentCurrency());
+        $discountCents = 0;
+
+        if (filled($data['coupon'] ?? null)) {
+            $coupon = Coupon::query()->where('code', trim((string) $data['coupon']))->first();
+
+            if ($coupon === null || ! $coupon->canApply(auth()->id(), $amountCents, $currency)) {
+                return PaymentResult::failure(
+                    orderReference: $payable->paymentReference(),
+                    errorMessage: 'That coupon cannot be applied to this order.',
+                    errorCode: 'coupon_invalid'
+                );
+            }
+
+            $discountCents = max(0, $coupon->calculateDiscount($amountCents));
+        }
+
+        $amountCents -= $discountCents;
+
+        if ($amountCents <= 0) {
+            // A full discount is a legitimate thing to configure, but there is
+            // no gateway call to make for it. The host settles it directly.
+            return PaymentResult::failure(
+                orderReference: $payable->paymentReference(),
+                errorMessage: 'This order comes to nothing once the discount is applied; no payment is needed.',
+                errorCode: 'nothing_to_pay'
+            );
+        }
+
         $gatewayCode = (string) ($data['gateway'] ?? $validated['gateway'] ?? $this->resolver->getDefaultDriver() ?? 'stripe');
 
         if (blank($gatewayCode)) {
@@ -88,8 +122,6 @@ class ChargePaymentAction
             );
         }
 
-        $currency = strtoupper($payable->paymentCurrency());
-
         if (! $gateway->supportsCurrency($currency)) {
             return PaymentResult::failure(
                 orderReference: '',
@@ -108,9 +140,26 @@ class ChargePaymentAction
             (string) $payable->getKey(),
             $payable->paymentReference(),
             $gatewayCode,
+            // Failed attempts stay in the table and the column is unique, so a
+            // retry needs a key of its own. Counting them keys each attempt
+            // distinctly while still collapsing a double-submit of the same one.
+            (string) Payment::query()
+                ->where('payable_type', $payable->getMorphClass())
+                ->where('payable_id', $payable->getKey())
+                ->whereIn('status', [PaymentStatus::Failed, PaymentStatus::Canceled])
+                ->count(),
         ]));
 
-        $existing = Payment::query()->where('idempotency_key', $idempotencyKey)->first();
+        // Only an attempt that is still open, or already paid, stops another one.
+        //
+        // Returning the existing row whatever its status meant a buyer whose card
+        // was declined could never try again — and worse, was sent to the success
+        // page holding the reference of the payment that had just failed. A
+        // failed or cancelled attempt has to leave the door open.
+        $existing = Payment::query()
+            ->where('idempotency_key', $idempotencyKey)
+            ->whereIn('status', [PaymentStatus::Pending, PaymentStatus::Succeeded])
+            ->first();
 
         if ($existing !== null) {
             return PaymentResult::success(
@@ -132,7 +181,11 @@ class ChargePaymentAction
             'customer_phone' => $data['customer_phone'] ?? null,
             'customer_address' => $data['customer_address'] ?? null,
             'description' => $payable->paymentDescription() ?? ($data['description'] ?? null),
-            'metadata' => $data['metadata'] ?? null,
+            'metadata' => array_filter([
+                ...(array) ($data['metadata'] ?? []),
+                'coupon' => $data['coupon'] ?? null,
+                'discount_cents' => $discountCents ?: null,
+            ], fn ($value): bool => $value !== null),
         ];
 
         // The row goes in before the gateway is called. It used to be the other
@@ -166,6 +219,13 @@ class ChargePaymentAction
             'status' => $result->redirectUrl !== null ? PaymentStatus::Pending : PaymentStatus::Succeeded,
             'paid_at' => $result->redirectUrl === null ? now() : null,
         ]);
+
+        // The buyer is about to leave for the gateway's own page. If they never
+        // come back, and the bank's notification is dropped, nothing else would
+        // ask what happened until the scheduled sweep runs.
+        if ($result->redirectUrl !== null) {
+            ReverifyPaymentJob::dispatch($payment->id)->delay(now()->addSeconds(120));
+        }
 
         return $result;
     }

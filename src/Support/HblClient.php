@@ -2,6 +2,7 @@
 
 namespace Kreetancraft\PaymentGateway\Support;
 
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
@@ -127,6 +128,34 @@ class HblClient
      * then config. Deliberately no default — an empty kid is rejected by PACO,
      * and failing here names the missing setting instead.
      */
+    /**
+     * Refuse a response token we have already accepted.
+     *
+     * The claim checks make a token valid for an hour, so within that window the
+     * same bytes would be accepted again. In the normal synchronous request and
+     * response this is belt-and-braces — TLS already stands between us and
+     * whoever would replay it — but it costs one cache write and closes the case
+     * where a captured token is fed back in.
+     *
+     * Deliberately fails OPEN when the cache is unavailable: a broken cache must
+     * not stop payments being verified, and the guard is defence in depth rather
+     * than the thing standing between us and the bank.
+     */
+    private function rejectIfSeenBefore(string $token): void
+    {
+        $key = 'payment-gateway:jose-seen:'.hash('sha256', $token);
+
+        try {
+            if (! Cache::add($key, true, now()->addHour())) {
+                throw new RuntimeException('This gateway response has already been processed.');
+            }
+        } catch (RuntimeException $e) {
+            throw $e;
+        } catch (Throwable) {
+            // No usable cache. Carry on rather than refusing to take payments.
+        }
+    }
+
     private function getEncryptionKeyId(): string
     {
         if (app()->bound(GatewayResolver::class)) {
@@ -206,6 +235,8 @@ class HblClient
 
         if (str_starts_with($responseBody, 'ey')) {
             try {
+                $this->rejectIfSeenBefore($responseBody);
+
                 $decrypted = $this->codec->decrypt($responseBody, $this->decryptionKey(), $this->pacoSigningKey(), $apiKey);
 
                 if ($httpResponse->failed()) {

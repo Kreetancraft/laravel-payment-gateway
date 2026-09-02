@@ -190,3 +190,55 @@ it('marks a failed charge failed without losing the record', function (): void {
     expect(Payment::first()->status)->toBe(PaymentStatus::Failed)
         ->and(Payment::first()->payable_id)->toBe($invoice->id);
 });
+
+it('lets a buyer try again after a decline', function (): void {
+    // Found on the bench, against the real gateway: a declined card left a
+    // `failed` payment, the idempotency check matched it whatever its status,
+    // and the next attempt was swallowed — the buyer was sent to the success
+    // page holding the reference of the payment that had just failed.
+    $declining = Mockery::mock(PaymentGateway::class);
+    $declining->shouldReceive('supportsCurrency')->andReturn(true);
+    $declining->shouldReceive('charge')->andReturn(
+        PaymentResult::failure(orderReference: 'ORD-A', errorMessage: 'declined', errorCode: 'card_declined')
+    );
+
+    $resolver = Mockery::mock(GatewayResolver::class);
+    $resolver->shouldReceive('getDefaultDriver')->andReturn('stripe');
+    $resolver->shouldReceive('resolve')->andReturn($declining);
+    app()->instance(GatewayResolver::class, $resolver);
+
+    $invoice = TestInvoice::create(['number' => 'INV-R', 'currency' => 'USD', 'total_cents' => 5000]);
+
+    ChargePaymentAction::run(['payable_type' => 'invoice', 'payable_id' => $invoice->id]);
+    expect(Payment::count())->toBe(1);
+
+    // Second go: a new attempt, not the old one handed back.
+    $result = ChargePaymentAction::run(['payable_type' => 'invoice', 'payable_id' => $invoice->id]);
+
+    expect(Payment::count())->toBe(2)
+        ->and($result->success)->toBeFalse();
+});
+
+it('still refuses a second attempt while one is in flight', function (): void {
+    // A redirect-style gateway leaves the payment pending while the buyer is on
+    // the bank's page. Starting another one there would be a double charge.
+    fakeGatewayAccepting();
+
+    $redirecting = Mockery::mock(PaymentGateway::class);
+    $redirecting->shouldReceive('supportsCurrency')->andReturn(true);
+    $redirecting->shouldReceive('charge')->andReturn(
+        PaymentResult::success(orderReference: 'ORD-B', redirectUrl: 'https://bank.example/pay', checkoutData: null)
+    );
+
+    $resolver = Mockery::mock(GatewayResolver::class);
+    $resolver->shouldReceive('getDefaultDriver')->andReturn('himalayan');
+    $resolver->shouldReceive('resolve')->andReturn($redirecting);
+    app()->instance(GatewayResolver::class, $resolver);
+
+    $invoice = TestInvoice::create(['number' => 'INV-P', 'currency' => 'NPR', 'total_cents' => 5000]);
+
+    ChargePaymentAction::run(['payable_type' => 'invoice', 'payable_id' => $invoice->id]);
+    ChargePaymentAction::run(['payable_type' => 'invoice', 'payable_id' => $invoice->id]);
+
+    expect(Payment::count())->toBe(1);
+});

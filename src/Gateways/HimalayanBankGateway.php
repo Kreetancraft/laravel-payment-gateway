@@ -11,6 +11,7 @@ use Kreetancraft\PaymentGateway\Data\VerificationResult;
 use Kreetancraft\PaymentGateway\Data\WebhookResult;
 use Kreetancraft\PaymentGateway\Models\Gateway;
 use Kreetancraft\PaymentGateway\Support\HblClient;
+use RuntimeException;
 use Throwable;
 
 class HimalayanBankGateway extends AbstractGateway
@@ -35,7 +36,7 @@ class HimalayanBankGateway extends AbstractGateway
             $cancelUrl = $this->resolveRedirectUrl('cancel', ['order' => $orderNo, 'reference' => $orderNo, 'orderNo' => $orderNo]);
             $backendUrl = $this->resolveWebhookUrl();
 
-            $purchaseItems = $data['purchase_items'] ?? $data['purchaseItems'] ?? $this->buildDefaultPurchaseItems($orderNo, $currency);
+            $purchaseItems = $data['purchase_items'] ?? $data['purchaseItems'] ?? $this->buildDefaultPurchaseItems($orderNo, $currency, (int) ($data['amount_cents'] ?? 0));
             $customFields = $data['custom_fields'] ?? $data['customFieldList'] ?? [['fieldName' => 'TestField', 'fieldValue' => 'This is test']];
 
             $response = $this->client->prePaymentUi([
@@ -360,20 +361,31 @@ class HimalayanBankGateway extends AbstractGateway
     /**
      * @return array<int, array<string, mixed>>
      */
-    private function buildDefaultPurchaseItems(string $orderNo, string $currency): array
+    /**
+     * The line item PACO wants alongside the transaction.
+     *
+     * Three things here came straight from the vendor's demo and were wrong for
+     * anybody else: the currency was hardcoded NPR while the method was handed
+     * the real one and ignored it — so a USD charge shipped a USD total beside a
+     * rupee line item — and the reference and sub-merchant were the demo's own
+     * literal values, including the word "string".
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    private function buildDefaultPurchaseItems(string $orderNo, string $currency, int $amountCents): array
     {
         return [
             [
                 'purchaseItemType' => 'ticket',
-                'referenceNo' => '2322460376026',
-                'purchaseItemDescription' => "Bundled insurance for {$orderNo}",
+                'referenceNo' => $orderNo,
+                'purchaseItemDescription' => "Payment for {$orderNo}",
                 'purchaseItemPrice' => [
-                    'amountText' => '000000000100',
-                    'currencyCode' => 'NPR',
+                    'amountText' => str_pad((string) $amountCents, 12, '0', STR_PAD_LEFT),
+                    'currencyCode' => $currency,
                     'decimalPlaces' => 2,
-                    'amount' => 1,
+                    'amount' => round($amountCents / 100, 2),
                 ],
-                'subMerchantID' => 'string',
+                'subMerchantID' => (string) $this->gateway->getHimalayanOfficeId(),
                 'passengerSeqNo' => 1,
             ],
         ];
@@ -420,6 +432,14 @@ class HimalayanBankGateway extends AbstractGateway
             return route('payment.webhook', ['gateway' => 'himalayan']);
         }
 
-        return url('/payment/webhook/himalayan');
+        // Do not guess. That route only exists under the API prefix, so with
+        // PAYMENT_GATEWAY_REGISTER_API=false the guessed URL 404s — and the bank's
+        // notification disappears silently, hours later, in production. Fail here
+        // instead, where the message can name the setting to change.
+        throw new RuntimeException(
+            'No webhook route is registered, so there is no URL to give the bank. '
+            .'Set payment-gateway.routes.redirect_urls.webhook to the URL it should call, '
+            .'or enable the package API routes.'
+        );
     }
 }
