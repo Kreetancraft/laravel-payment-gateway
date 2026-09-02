@@ -15,6 +15,7 @@ use Kreetancraft\PaymentGateway\Data\RefundResult;
 use Kreetancraft\PaymentGateway\Data\VerificationResult;
 use Kreetancraft\PaymentGateway\Data\WebhookResult;
 use Kreetancraft\PaymentGateway\Models\Payment;
+use Kreetancraft\PaymentGateway\Tests\Fixtures\Models\TestInvoice;
 
 uses(RefreshDatabase::class);
 
@@ -38,12 +39,14 @@ it('charges via stripe mock and creates payment', function (): void {
     $resolver->shouldReceive('resolve')->with('stripe')->andReturn($mockGateway);
     $this->app->instance(GatewayResolver::class, $resolver);
 
+    // The amount comes off the payable now, never from the caller.
+    $invoice = TestInvoice::create(['number' => 'INV-1', 'currency' => 'USD', 'total_cents' => 5000]);
+
     $result = ChargePaymentAction::run([
-        'amount_cents' => 5000,
-        'currency' => 'USD',
+        'payable_type' => 'invoice',
+        'payable_id' => $invoice->id,
         'gateway' => 'stripe',
         'customer_email' => 'test@example.com',
-        'description' => 'Test payment',
     ]);
 
     expect($result->success)->toBeTrue();
@@ -64,9 +67,11 @@ it('fails charge with invalid currency for gateway', function (): void {
     $resolver->shouldReceive('resolve')->with('stripe')->andReturn($mockGateway);
     $this->app->instance(GatewayResolver::class, $resolver);
 
+    $invoice = TestInvoice::create(['number' => 'INV-2', 'currency' => 'XYZ', 'total_cents' => 1000]);
+
     $result = ChargePaymentAction::run([
-        'amount_cents' => 1000,
-        'currency' => 'XYZ',
+        'payable_type' => 'invoice',
+        'payable_id' => $invoice->id,
         'gateway' => 'stripe',
     ]);
 

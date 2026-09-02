@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
@@ -65,7 +66,19 @@ class Payment extends Model
         'customer_address',
         'description',
         'metadata',
+        'payable_type',
+        'payable_id',
     ];
+
+    /**
+     * What this payment pays for — an invoice, a booking, whatever the host
+     * sells. Nullable so an application that has not adopted the Payable
+     * contract keeps working.
+     */
+    public function payable(): MorphTo
+    {
+        return $this->morphTo();
+    }
 
     protected function casts(): array
     {

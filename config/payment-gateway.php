@@ -163,6 +163,25 @@ return [
     | Routes Configuration
     |--------------------------------------------------------------------------
     */
+    /*
+    |--------------------------------------------------------------------------
+    | Payables
+    |--------------------------------------------------------------------------
+    |
+    | What may be paid for. A checkout names one of these plus an id; the amount
+    | and currency are read off the model, never taken from the request.
+    |
+    | Keys are the public alias a client sends, values the model class, which
+    | must implement Kreetancraft\PaymentGateway\Contracts\Payable. An alias
+    | not listed here is refused — so a caller cannot point checkout at an
+    | arbitrary model and have it charged.
+    |
+    |     'invoice' => \App\Models\Invoice::class,
+    |     'booking' => \App\Models\Booking::class,
+    |
+    */
+    'payables' => [],
+
     'routes' => [
         'register' => env('PAYMENT_GATEWAY_REGISTER_ROUTES', true),
         'register_ui' => env('PAYMENT_GATEWAY_REGISTER_UI', true), // Set false for headless API setups

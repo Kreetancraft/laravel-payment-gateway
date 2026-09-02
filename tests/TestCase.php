@@ -6,7 +6,9 @@ namespace Kreetancraft\PaymentGateway\Tests;
 
 use Flux\FluxServiceProvider;
 use Illuminate\Foundation\Application;
+use Illuminate\Support\Facades\Schema;
 use Kreetancraft\PaymentGateway\Providers\PaymentGatewayServiceProvider;
+use Kreetancraft\PaymentGateway\Tests\Fixtures\Models\TestInvoice;
 use Livewire\LivewireServiceProvider;
 use Orchestra\Testbench\TestCase as BaseTestCase;
 
@@ -44,6 +46,12 @@ abstract class TestCase extends BaseTestCase
         $app['config']->set('payment-gateway.gateways.himalayan.office_id', null);
         $app['config']->set('app.key', 'base64:'.base64_encode(random_bytes(32)));
         $app['config']->set('payment-gateway.routes.home', '/');
+
+        // The only payable the suite knows about. Checkout refuses anything not
+        // listed here, so this is also what makes the allowlist testable.
+        $app['config']->set('payment-gateway.payables', [
+            'invoice' => TestInvoice::class,
+        ]);
         $app['config']->set('view.paths', [
             __DIR__.'/fixtures/views',
             __DIR__.'/../resources/views',
@@ -54,6 +62,16 @@ abstract class TestCase extends BaseTestCase
     protected function defineDatabaseMigrations(): void
     {
         $this->loadMigrationsFrom(__DIR__.'/../database/migrations');
+
+        // The host's table, standing in for whatever it sells.
+        Schema::create('test_invoices', function ($table): void {
+            $table->id();
+            $table->string('number');
+            $table->string('currency', 3)->default('USD');
+            $table->unsignedInteger('total_cents')->default(0);
+            $table->unsignedInteger('paid_cents')->default(0);
+            $table->timestamps();
+        });
     }
 
     protected function seedRolesAndPermissions(): void
