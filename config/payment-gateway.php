@@ -177,6 +177,20 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Stylesheet for the buyer-facing pages
+    |--------------------------------------------------------------------------
+    |
+    | The package's own layout (success, failed, cancel) emits `@vite` only when
+    | the host has actually built `resources/css/app.css`. If yours does not —
+    | different entry points, no build step, a CDN — name a view here and it is
+    | included in the head instead. Null means nothing extra is emitted.
+    |
+    */
+
+    'assets_view' => null,
+
+    /*
+    |--------------------------------------------------------------------------
     | Layouts
     |--------------------------------------------------------------------------
     |

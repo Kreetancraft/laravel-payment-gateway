@@ -28,6 +28,14 @@
         @if (file_exists(public_path('hot')) || file_exists(public_path('build/manifest.json')))
             @vite(['resources/css/app.css', 'resources/js/app.js'])
         @endif
+
+        {{--
+            For hosts that do not build these entry points with Vite. Name a view
+            in `payment-gateway.assets_view` and it is included here; leave it
+            null and nothing renders. A missing view renders nothing rather than
+            erroring, which is the same bargain the other packages make.
+        --}}
+        @includeIf(config('payment-gateway.assets_view'))
         @fluxAppearance
     </head>
     <body class="min-h-screen bg-zinc-50 text-zinc-900 dark:bg-zinc-900 dark:text-zinc-100 flex flex-col antialiased">

@@ -13,6 +13,10 @@ class WorkbenchServiceProvider extends ServiceProvider
         // uses. A host does exactly this in config/payment-gateway.php.
         config()->set('payment-gateway.payables.invoice', DemoInvoice::class);
 
+        // The bench has no Vite build, so the package's buyer-facing pages take
+        // their stylesheet from here instead.
+        config()->set('payment-gateway.assets_view', 'payment-assets');
+
         // Prepended on the finder itself, not via config: the finder is already
         // built by the time boot() runs, so setting `view.paths` here changes
         // nothing and Layout::admin() still finds no layout.
