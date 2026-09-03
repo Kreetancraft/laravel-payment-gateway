@@ -132,6 +132,24 @@ class CouponUsage extends Model
         string $currency,
         array $metadata = []
     ): self {
+        // One coupon, one order, one row. This was a bare `create()`, so a
+        // double-clicked apply, a retried job or a redelivered webhook recorded
+        // the redemption again — and each duplicate counted afresh against the
+        // coupon's usage cap, so a coupon limited to 100 could be exhausted by
+        // 50 customers.
+        //
+        // A repeat is the same redemption arriving twice, so the existing row is
+        // returned untouched rather than its discount being added again.
+        $existing = static::query()
+            ->where('coupon_id', $couponId)
+            ->where('order_type', $orderType)
+            ->where('order_id', $orderId)
+            ->first();
+
+        if ($existing !== null) {
+            return $existing;
+        }
+
         return static::create([
             'coupon_id' => $couponId,
             'user_id' => $userId,
