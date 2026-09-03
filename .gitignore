@@ -25,3 +25,9 @@ Thumbs.db
 Homestead.json
 Homestead.yaml
 auth.json
+
+# The local bench: a throwaway host app used to take real payments against the
+# gateways' sandboxes. Useful on a developer's machine, not part of what a host
+# application installs, so it stays out of the repository.
+/testbench.yaml
+/workbench
