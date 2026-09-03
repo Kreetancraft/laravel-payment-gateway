@@ -134,6 +134,27 @@ class Payment extends Model
         });
     }
 
+    /**
+     * What has actually been paid toward this thing, in minor units.
+     *
+     * Summed from the payment rows rather than read off a counter, so it cannot
+     * drift from what really happened. Refunds come off, because money given
+     * back is not money held.
+     *
+     * Filtered by currency deliberately: adding NPR to USD produces a number
+     * that means nothing, and the donor application does exactly that by having
+     * no currency column to filter on.
+     */
+    public static function netPaidCentsFor(Model $payable, string $currency): int
+    {
+        return (int) static::query()
+            ->where('payable_type', $payable->getMorphClass())
+            ->where('payable_id', $payable->getKey())
+            ->where('currency', strtoupper($currency))
+            ->whereIn('status', [PaymentStatus::Succeeded, PaymentStatus::PartiallyRefunded, PaymentStatus::Refunded])
+            ->sum(DB::raw('amount_cents - refunded_amount_cents'));
+    }
+
     public function payableAlias(): ?string
     {
         if (blank($this->payable_type)) {

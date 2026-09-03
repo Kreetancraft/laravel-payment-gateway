@@ -75,6 +75,7 @@ abstract class TestCase extends BaseTestCase
             $table->string('currency', 3)->default('USD');
             $table->unsignedInteger('total_cents')->default(0);
             $table->unsignedInteger('paid_cents')->default(0);
+            $table->unsignedInteger('deposit_cents')->default(0);
             $table->timestamps();
         });
     }

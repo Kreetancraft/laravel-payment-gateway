@@ -8,8 +8,10 @@ use Illuminate\Support\Facades\Route;
 use Kreetancraft\PaymentGateway\Actions\ChargePaymentAction;
 use Kreetancraft\PaymentGateway\Contracts\GatewayResolver;
 use Kreetancraft\PaymentGateway\Contracts\Payable;
+use Kreetancraft\PaymentGateway\Contracts\SupportsDeposit;
 use Kreetancraft\PaymentGateway\Layout;
 use Kreetancraft\PaymentGateway\Models\Coupon;
+use Kreetancraft\PaymentGateway\Models\Payment;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Url;
 use Livewire\Component;
@@ -35,6 +37,16 @@ class Checkout extends Component
 
     #[Url]
     public int|string|null $payableId = null;
+
+    /**
+     * Which of two server-computed amounts the buyer is paying: the whole
+     * outstanding balance, or the deposit that secures the booking.
+     *
+     * Still not the buyer choosing a price — both figures come off the payable.
+     * A payable that does not implement SupportsDeposit refuses `deposit`.
+     */
+    #[Url]
+    public string $amountType = 'full';
 
     /**
      * Kept so an old link carrying ?amount= still loads rather than erroring.
@@ -432,7 +444,24 @@ class Checkout extends Component
      */
     public function getAmountInCents(): int
     {
-        return $this->payable()?->paymentAmountCents() ?? 0;
+        $payable = $this->payable();
+
+        if ($payable === null) {
+            return 0;
+        }
+
+        $outstanding = $payable->paymentAmountCents();
+
+        if ($this->amountType !== 'deposit' || ! $payable instanceof SupportsDeposit) {
+            return $outstanding;
+        }
+
+        // What is left of the deposit, never more than is still owed. The same
+        // arithmetic ChargePaymentAction does, so the screen shows the figure
+        // that will actually be charged.
+        $alreadyPaid = Payment::netPaidCentsFor($payable, strtoupper($payable->paymentCurrency()));
+
+        return min($outstanding, max(0, $payable->paymentDepositCents() - $alreadyPaid));
     }
 
     /**
@@ -537,6 +566,7 @@ class Checkout extends Component
             'payable_type' => $this->payableType,
             'payable_id' => $this->payableId,
             'coupon' => $this->appliedCouponCode,
+            'amount_type' => $this->amountType,
             'gateway' => $this->selectedGateway,
             'customer_email' => $this->customerEmail,
             'customer_name' => $this->customerName ?: null,

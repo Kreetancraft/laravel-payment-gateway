@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Validator;
 use Kreetancraft\PaymentGateway\Contracts\GatewayResolver;
 use Kreetancraft\PaymentGateway\Contracts\Payable;
+use Kreetancraft\PaymentGateway\Contracts\SupportsDeposit;
 use Kreetancraft\PaymentGateway\Data\PaymentResult;
 use Kreetancraft\PaymentGateway\Enums\PaymentStatus;
 use Kreetancraft\PaymentGateway\Jobs\ReverifyPaymentJob;
@@ -38,6 +39,8 @@ class ChargePaymentAction
             // Coupon row, so the caller cannot choose how much to take off.
             'coupon' => ['sometimes', 'nullable', 'string', 'max:64'],
             'gateway' => ['sometimes', 'string'],
+            // Which of two server-computed amounts, never what either is worth.
+            'amount_type' => ['sometimes', 'nullable', 'in:full,balance,deposit'],
             'customer_email' => ['sometimes', 'nullable', 'email'],
             'customer_name' => ['sometimes', 'nullable', 'string', 'max:255'],
             'description' => ['sometimes', 'nullable', 'string', 'max:1000'],
@@ -64,7 +67,36 @@ class ChargePaymentAction
             );
         }
 
-        $amountCents = $payable->paymentAmountCents();
+        $currency = strtoupper($payable->paymentCurrency());
+        $outstanding = $payable->paymentAmountCents();
+        $amountType = (string) ($validated['amount_type'] ?? 'full');
+
+        if ($amountType === 'deposit') {
+            if (! $payable instanceof SupportsDeposit) {
+                return PaymentResult::failure(
+                    orderReference: $payable->paymentReference(),
+                    errorMessage: 'This cannot be paid by deposit.',
+                    errorCode: 'deposit_not_supported'
+                );
+            }
+
+            // What is left *of the deposit*. Somebody who has paid part of it
+            // owes the rest, not the whole figure again — and never more than
+            // the invoice still has outstanding, or a deposit larger than the
+            // remaining balance would overcharge on the last instalment.
+            $alreadyPaid = Payment::netPaidCentsFor($payable, $currency);
+            $amountCents = min($outstanding, max(0, $payable->paymentDepositCents() - $alreadyPaid));
+
+            if ($amountCents <= 0) {
+                return PaymentResult::failure(
+                    orderReference: $payable->paymentReference(),
+                    errorMessage: 'The deposit on this has already been paid.',
+                    errorCode: 'deposit_already_paid'
+                );
+            }
+        } else {
+            $amountCents = $outstanding;
+        }
 
         if ($amountCents <= 0) {
             return PaymentResult::failure(
@@ -73,8 +105,6 @@ class ChargePaymentAction
                 errorCode: 'nothing_to_pay'
             );
         }
-
-        $currency = strtoupper($payable->paymentCurrency());
         $discountCents = 0;
 
         if (filled($data['coupon'] ?? null)) {
