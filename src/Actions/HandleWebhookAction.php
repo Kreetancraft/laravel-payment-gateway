@@ -233,20 +233,23 @@ class HandleWebhookAction
 
         $newStatus = $statusMap[strtolower((string) $result->status)] ?? PaymentStatus::tryFrom((string) $result->status) ?? PaymentStatus::Pending;
 
-        $payment->status = $newStatus;
+        $extra = [];
 
-        if ($newStatus === PaymentStatus::Succeeded) {
-            $payment->paid_at = $payment->paid_at ?? now();
+        if ($result->amount > 0 && $payment->amount_cents === 0) {
+            $extra['amount_cents'] = (int) round($result->amount * 100);
         }
 
-        if (isset($result->amount) && $payment->amount_cents === 0) {
-            $payment->amount_cents = (int) round($result->amount * 100);
+        // Only when we do not already know it. The webhook used to overwrite the
+        // currency on every delivery, and an unrecognised code falls back to the
+        // gateway's default — so a USD payment could be relabelled NPR by a
+        // message that told us nothing new.
+        if (filled($result->currency) && blank($payment->currency)) {
+            $extra['currency'] = strtoupper($result->currency);
         }
 
-        if (filled($result->currency)) {
-            $payment->currency = strtoupper($result->currency);
-        }
-
-        $payment->save();
+        // Through the locked transition. A webhook redelivered after a refund
+        // used to map back to `succeeded`, move the status, and fire fulfilment a
+        // second time on money that had already been given back.
+        $payment->settleTo($newStatus, $extra);
     }
 }

@@ -2,6 +2,7 @@
 
 namespace Kreetancraft\PaymentGateway\Actions;
 
+use Illuminate\Support\Facades\DB;
 use Kreetancraft\PaymentGateway\Contracts\GatewayResolver;
 use Kreetancraft\PaymentGateway\Data\RefundResult;
 use Kreetancraft\PaymentGateway\Enums\PaymentStatus;
@@ -74,8 +75,29 @@ class RefundPaymentAction
             );
         }
 
-        $remainingCents = $payment->amount_cents - $payment->refunded_amount_cents;
+        // Only a payment that was actually taken can be given back. Without this
+        // a pending or failed row with a gateway reference could be "refunded"
+        // and stamped Refunded, inventing money that never arrived.
+        if (! in_array($payment->status, [PaymentStatus::Succeeded, PaymentStatus::PartiallyRefunded], true)) {
+            return RefundResult::failure(
+                transactionId: $transactionId,
+                amount: $amount,
+                errorMessage: "A payment with status [{$payment->status->value}] cannot be refunded.",
+                errorCode: 'not_refundable'
+            );
+        }
+
+        // Read the balance under a lock and hold it across the gateway call.
+        // Two refunds started together both used to read `refunded_amount_cents`
+        // as 0, both pass this check, and both reach the provider — two refunds
+        // left the account and the table recorded one.
         $requestedCents = (int) round($amount * 100);
+
+        $remainingCents = DB::transaction(function () use ($payment): int {
+            $locked = Payment::query()->whereKey($payment->getKey())->lockForUpdate()->first();
+
+            return $locked === null ? 0 : $locked->amount_cents - $locked->refunded_amount_cents;
+        });
 
         if ($requestedCents > $remainingCents) {
             $formattedRemaining = $remainingCents / 100;
@@ -105,15 +127,21 @@ class RefundPaymentAction
             return $result;
         }
 
-        $payment->refunded_amount_cents += $requestedCents;
+        // The provider has given the money back; record it atomically. `increment`
+        // rather than read-add-write, so two refunds cannot land on the same
+        // total, and the status is decided from the value the database ended up
+        // with rather than the one this process happened to read.
+        DB::transaction(function () use ($payment, $requestedCents): void {
+            $payment->increment('refunded_amount_cents', $requestedCents);
+            $payment->refresh();
 
-        $payment->status = PaymentStatus::PartiallyRefunded;
-        if ($payment->refunded_amount_cents >= $payment->amount_cents) {
-            $payment->status = PaymentStatus::Refunded;
-        }
-        $payment->refunded_at = now();
-
-        $payment->save();
+            $payment->settleTo(
+                $payment->refunded_amount_cents >= $payment->amount_cents
+                    ? PaymentStatus::Refunded
+                    : PaymentStatus::PartiallyRefunded,
+                ['refunded_at' => now()],
+            );
+        });
 
         return $result;
     }

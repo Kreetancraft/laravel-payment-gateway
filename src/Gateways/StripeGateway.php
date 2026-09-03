@@ -258,7 +258,16 @@ class StripeGateway extends AbstractGateway
                 paidAt: $paymentIntent->status === 'succeeded' ? now()->toDateTimeString() : null
             );
         } catch (ApiErrorException $e) {
-            return VerificationResult::failure(
+            // Not `failure()`. That carries status 'failed', which the caller
+            // writes onto the payment — so a DNS blip or a TLS timeout while the
+            // buyer was returning wrote off a payment Stripe had captured.
+            // ApiConnectionException extends ApiErrorException, so the transport
+            // case arrives here too.
+            //
+            // Failing to get an answer is not an answer. Only the gateway saying
+            // a payment failed makes it failed, which is the rule the Himalayan
+            // driver already follows.
+            return VerificationResult::undetermined(
                 transactionId: $id,
                 errorMessage: $e->getMessage()
             );

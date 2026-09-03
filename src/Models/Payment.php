@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Kreetancraft\PaymentGateway\Database\Factories\PaymentFactory;
 use Kreetancraft\PaymentGateway\Enums\PaymentStatus;
@@ -83,6 +84,56 @@ class Payment extends Model
      * payment offer a retry link that still knows what was being bought —
      * without it the buyer is sent to a checkout with nothing in it.
      */
+    /**
+     * Move this payment to a new status, safely.
+     *
+     * Four things settle a payment — the gateway's webhook, the buyer's return
+     * page, the re-verify job and the reconcile sweep — and any two of them can
+     * arrive at once. Without a lock both read `pending`, both write
+     * `succeeded`, and `PaymentSucceeded` fires twice: two invoices for one
+     * payment.
+     *
+     * So the row is locked, its status is read again *inside* the lock, and the
+     * move is checked against what is actually allowed. A payment that has
+     * already settled absorbs a second attempt instead of moving backwards —
+     * which is what let a redelivered webhook turn a refunded payment back into
+     * a succeeded one, and re-run fulfilment on it.
+     *
+     * Returns true only when this call is the one that made the change, so a
+     * caller can tell "I settled it" from "someone else already had".
+     *
+     * @param  array<string, mixed>  $extra  columns to write in the same move
+     */
+    public function settleTo(PaymentStatus $status, array $extra = []): bool
+    {
+        return DB::transaction(function () use ($status, $extra): bool {
+            /** @var self|null $locked */
+            $locked = static::query()->whereKey($this->getKey())->lockForUpdate()->first();
+
+            if ($locked === null) {
+                return false;
+            }
+
+            if (! $locked->status->canMoveTo($status)) {
+                return false;
+            }
+
+            $locked->fill($extra);
+            $locked->status = $status;
+
+            if ($status === PaymentStatus::Succeeded && $locked->paid_at === null) {
+                $locked->paid_at = now();
+            }
+
+            $locked->save();
+
+            // Keep the in-memory instance honest for the caller.
+            $this->setRawAttributes($locked->getAttributes(), true);
+
+            return true;
+        });
+    }
+
     public function payableAlias(): ?string
     {
         if (blank($this->payable_type)) {

@@ -39,7 +39,12 @@ class VerifyPaymentAction
                 ->first();
         }
 
-        $gatewayCode = $this->firstFilled($data, ['gateway']) ?: (string) ($payment?->gateway ?? '');
+        // The payment's own gateway wins. It used to be the other way round, and
+        // `/payment/success` is a public GET — so anyone with a reference could
+        // add `?gateway=stripe` to an HBL payment, have Stripe fail to recognise
+        // the id, and turn a settled payment into a failed one. A request does
+        // not get to choose who is asked about somebody else's money.
+        $gatewayCode = (string) ($payment?->gateway ?? '') ?: $this->firstFilled($data, ['gateway']);
 
         // Only guess when there is genuinely nothing to go on. With a lookup key
         // that matched nothing, falling back to the default driver handed a
@@ -107,21 +112,26 @@ class VerifyPaymentAction
             return;
         }
 
-        $payment->status = match (true) {
+        $target = match (true) {
             $result->success && in_array($statusStr, ['completed', 'settled', 'success', 'approved', 'succeeded', 'paid', '0000'], true) => PaymentStatus::Succeeded,
             in_array($statusStr, ['cancelled', 'canceled'], true) => PaymentStatus::Canceled,
             in_array($statusStr, ['failed', 'declined', 'rejected', 'error'], true) => PaymentStatus::Failed,
-            default => $payment->status,
+            default => null,
         };
 
-        if ($payment->status === PaymentStatus::Succeeded) {
-            $payment->paid_at ??= now();
+        if ($target === null) {
+            return;
         }
+
+        $extra = [];
 
         if (filled($result->transactionId) && blank($payment->gateway_reference)) {
-            $payment->gateway_reference = $result->transactionId;
+            $extra['gateway_reference'] = $result->transactionId;
         }
 
-        $payment->save();
+        // Through the locked transition, not a bare save: the buyer's return page
+        // and the gateway's webhook routinely arrive together, and both used to
+        // write the status and fire fulfilment.
+        $payment->settleTo($target, $extra);
     }
 }
